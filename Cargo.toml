@@ -9,6 +9,6 @@ repository = "https://github.com/chidea/creole-nom"
 readme = "README.md"
 keywords = ["wiki", "markdown", "parser", "creole", "nom"]
 categories = ["parser-implementations"]
-
+exclude = [ "*.sh" ]
 [dependencies]
 nom = "6.0.0-alpha1"
