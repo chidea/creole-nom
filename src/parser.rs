@@ -179,7 +179,8 @@ fn creole_dbg<'a>(dbg:bool, i:&'a str) -> IResult<&'a str, Vec<Creole<'a>>> {
 fn _line_ending(input:&str) -> IResult<&str, &str> {
   line_ending(input)
 }
-fn creoles(i:&str) -> IResult<&str,Vec<Creole>> {
+/// parser top entry point
+pub fn creoles(i:&str) -> IResult<&str,Vec<Creole>> {
   _creoles(false, i)
 }
 fn creoles_dbg(i:&str) -> IResult<&str,Vec<Creole>> {
