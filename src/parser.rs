@@ -1,26 +1,26 @@
-use nom::{
-  IResult,
-  error::{ErrorKind, ParseError},
-  // bytes::{
-  //   complete::{take_while},
-  // },
-  character::{
-    is_alphanumeric,
-    complete::{
-      // char,
-      not_line_ending, line_ending,
-      none_of, one_of,
-      space0, space1,
+use {
+  std::env,
+  serde::{Deserialize, Serialize},
+  nom::{
+    IResult,
+    error::{ErrorKind, ParseError},
+    // bytes::{
+    //   complete::{take_while},
+    // },
+    character::{
+      is_alphanumeric,
+      complete::{
+        // char,
+        not_line_ending, line_ending,
+        none_of, one_of,
+        space0, space1,
+      },
     },
+    combinator::{map, map_opt, map_res, value, verify, rest},
+    sequence::{delimited, preceded, tuple},
+    char, tag, is_not, take_while_m_n, take_while, take, take_while1, take_str,// re_find,
+    many0, many1_count,
   },
-  combinator::{map, map_opt, map_res, value, verify, rest},
-  sequence::{delimited, preceded, tuple},
-  char, tag, is_not, take_while_m_n, take_while, take, take_while1, take_str,// re_find,
-  many0, many1_count,
-};
-
-use std::{
-  env,
 };
 
 // named!(escape, delimited!(tag!("{{{"), is_not!("}}}"), tag!("}}}")));
@@ -68,32 +68,34 @@ fn is_space(c: char) -> bool {
 fn non_markup(s: &str) -> IResult<&str, &str> {
   nom::bytes::complete::take_while(is_not_markup)(s)
 }
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Creole<'a> {
-  Text(&'a str),
-  Bold(&'a str),
-  Italic(&'a str),
-  BulletList(u8, &'a str),
-  NumberedList(u8, &'a str),
-  Link(&'a str, &'a str),
-  Heading(u8, &'a str),
+
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub enum Creole<T:std::string::ToString>{
+  Text(T),
+  Bold(T),
+  Italic(T),
+  BulletList(u8, T),
+  NumberedList(u8, T),
+  Link(T, T),
+  Heading(u8, T),
   Linebreak,
   HorizontalLine,
-  Image(&'a str, &'a str),
-  TableHeaderCell(&'a str),
-  TableRowCell(&'a str),
-  // Escape(&'a str),
+  Image(T, T),
+  TableHeaderCell(T),
+  TableRowCell(T),
+  // Escape(T),
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CreoleErr {
   None,
 }
 
-impl ParseError<&str> for CreoleErr {
-  fn from_error_kind(input: &str, kind: ErrorKind) -> Self {
+impl ParseError<T:ToString> for CreoleErr {
+  fn from_error_kind(input: T, kind: ErrorKind) -> Self {
     Self::None
   }
-  fn append(input: &str, kind: ErrorKind, other: Self) -> Self {
+  fn append(input: T, kind: ErrorKind, other: Self) -> Self {
     Self::None
   }
 }
@@ -102,99 +104,14 @@ const MARKUPS: &'static str = "*/#=[]{}-|\\";
 const INLINE_MARKUP_STARTS: &'static str = "*/[{\\";
 // const INLINE_MARKUP_ENDS :&'static str = "]}";
 
-fn creole_dbg<'a>(i: &'a str) -> IResult<&'a str, Vec<Creole<'a>>> {
-  debug!("line:{}", i);
-  let len: usize = i.len();
-  if len == 0 {
-    return Ok((&i[len..len], vec![]));
-  }
-
-  // single item per line
-  if let Ok((i, b)) = bulletlist(i) {
-    debug!("bulletlist:{}:{} , left:{}:{}", b.len(), b, i.len(), i);
-    return Ok((i, vec![Creole::BulletList(b.len() as u8 - 1, i)]));
-  }
-  if let Ok((i, b)) = numberedlist(i) {
-    debug!("numberedlist:{}:{}, left:{}:{}", b.len(), b, i.len(), i);
-    return Ok((i, vec![Creole::NumberedList(b.len() as u8 - 1, i)]));
-  }
-  if let Ok((i, b)) = heading(i) {
-    debug!("heading:{}:{}, left:{}:{}", b.len(), b, i.len(), i);
-    return Ok((i, vec![Creole::Heading(b.len() as u8 - 2, i)]));
-  }
-  if let Ok((i, b)) = horizontal(i) {
-    debug!("horizontal line");
-    return Ok((i, vec![Creole::HorizontalLine]));
-  }
-
-  debug!("multi item per line left:{}", i);
-  if i.is_empty() {
-    return Ok((i, vec![]));
-  }
-  // multi item per line
-  let mut v: Vec<Creole> = vec![];
-  // if cnt < len {
-  let r: IResult<&str, Vec<Creole>> =
-    nom::multi::many1::<&str, Creole, _, _>(|i: &'a str| -> IResult<&'a str, Creole<'a>> {
-      let len: usize = i.len();
-      if len == 0 {
-        return Err(nom::Err::Error((i, ErrorKind::Many1)));
-      } // done
-      debug!("text left:{}:{}", len, i);
-      let text = nom::bytes::complete::take_while1::<_, &str, CreoleErr>(|c| {
-        !INLINE_MARKUP_STARTS.contains(c)
-      });
-
-      if let Ok((i, b)) = text(i) {
-        debug!("normal text:{}:{}:{}:{}", b.len(), b, i.len(), i);
-        Ok((i, Creole::Text(b)))
-      } else if let Ok((i, b)) = bold(i) {
-        debug!("bold:{}", b);
-        Ok((i, Creole::Bold(b)))
-      } else if let Ok((i, b)) = italic(i) {
-        debug!("italic:{}", b);
-        Ok((i, Creole::Italic(b)))
-      } else if let Ok((i, b)) = linebreak(i) {
-        debug!("linebreak");
-        Ok((i, Creole::Linebreak))
-      } else {
-        debug!("panic?:{}:{}", i.len(), i);
-        Err(nom::Err::Error((i, ErrorKind::Many1)))
-      }
-    })(i);
-  // let r : IResult<&str, Vec<Creole>> = nom::multi::many0(|i:&'a str| -> IResult<&'a str, Creole<'a>> {
-  //   match non_markup(i) {
-  //     Ok((i, b)) => Ok((i, Creole::Text(b))),
-  //     Err(e) => Err(e)
-  //   }
-  // })(i);
-  // let r : IResult<&str, Vec<&str>> = texts(i);
-  debug!("after many1 finish:{:?}, {}", r, i);
-  if let Ok((i, vv)) = r {
-    // for vvv in vv {
-    // v.push(Creole::Text(vvv));
-    // }
-    // v.push(Creole::Text(vv));
-    v.extend(vv);
-  }
-  // let r = bold(i);
-  // if let Ok((i, vv)) = r{
-  //   v.push((Creole::Bold(vv)))
-  // }
-  //   Ok((&i[len..], v))
-  // }else{
-  //   Ok((i, v))
-  // }
-  Ok((i, v))
+/// debug purpose (because Creole<&str> is easier to build than Creole<String>)
+fn _creoles(i:&str) -> IResult<&str,Vec<Creole<&str>>> {
+  creoles::<&str>(i)
 }
-fn _line_ending(input: &str) -> IResult<&str, &str> {
-  line_ending(input)
-}
+
+// external creole parsers (String)
 /// parser top entry point
-pub fn creoles(i: &str) -> IResult<&str, Vec<Creole>> {
-  _creoles(i)
-}
-fn _creoles(i: &str) -> IResult<&str, Vec<Creole>> {
+pub fn creoles<T:ToString>(i:&str) -> IResult<&str,Vec<Creole<T>>> {
   let mut v = vec![];
   // let (mut start, mut end) :(usize, usize) = (0, 0);
   let mut start = 0usize;
@@ -234,6 +151,86 @@ fn _creoles(i: &str) -> IResult<&str, Vec<Creole>> {
   Ok((i, v))
 }
 
+fn creole_dbg<T:ToString, 'a>(dbg:bool, i:&'a str) -> IResult<&'a str, Vec<Creole<T>>> {
+  if dbg {println!("line:{}", i);}
+  let mut len :usize = i.len();
+  if len == 0 { return Ok((&i[len..len], vec![])) }
+
+  // single item per line
+  if let Ok((i, b)) = bulletlist(i){
+    if dbg {println!("bulletlist:{}:{} , left:{}:{}", b.len(), b, i.len(), i)}
+    return Ok((i, vec![Creole::BulletList(b.len() as u8-1, i)]))
+  }
+  if let Ok((i, b)) = numberedlist(i){
+    if dbg {println!("numberedlist:{}:{}, left:{}:{}", b.len(), b, i.len(), i)}
+    return Ok((i, vec![Creole::NumberedList(b.len() as u8-1, i)]))
+  }
+  if let Ok((i, b)) = heading(i){
+    if dbg {println!("heading:{}:{}, left:{}:{}", b.len(), b, i.len(), i)}
+    return Ok((i, vec![Creole::Heading(b.len() as u8-2, i)]))
+  }
+  if let Ok((i, b)) = horizontal(i){
+    if dbg {println!("horizontal line")}
+    return Ok((i, vec![Creole::HorizontalLine]))
+  }
+  
+  if dbg {println!("multi item per line left:{}", i)}
+  if i.len() == 0 {
+    return Ok((i, vec![]))
+  }
+  // multi item per line
+  let mut v :Vec<Creole> = vec![];
+  // if cnt < len {
+    let r : IResult<&str, Vec<Creole<T>>> = nom::multi::many1::<&str, Creole<T>, _, _>(|i:&'a str| -> IResult<&'a str, Creole<T>> {
+      let len :usize = i.len();
+      if len == 0 {return Err(nom::Err::Error((i, ErrorKind::Many1)))} // done
+      if dbg {println!("text left:{}:{}", len, i)}
+      let text = nom::bytes::complete::take_while1::<_, &str, CreoleErr>(|c| !INLINE_MARKUP_STARTS.contains(c) );
+
+      if let Ok((i, b)) = text(i) {
+        if dbg {println!("normal text:{}:{}:{}:{}", b.len(), b, i.len(), i)}
+        Ok((i, Creole::Text(b)))
+      } else if let Ok((i, b)) = bold(i) {
+        if dbg {println!("bold:{}", b)}
+        Ok((i, Creole::Bold(b)))
+      } else if let Ok((i, b)) = italic(i) {
+        if dbg {println!("italic:{}", b)}
+        Ok((i, Creole::Italic(b)))
+      } else if let Ok((i, b)) = linebreak(i) {
+        if dbg {println!("linebreak")}
+        Ok((i, Creole::Linebreak))
+      } else {
+        if dbg {println!("unfinished markup:{}:{}", i.len(), i)}
+        Ok((&i[1..], Creole::Text(&i[..1])))
+        // Err(nom::Err::Error((i, ErrorKind::Many1)))
+      }
+    })(i);
+    // let r : IResult<&str, Vec<Creole<T>>> = nom::multi::many0(|i:&'a str| -> IResult<&'a str, Creole<T>> {
+    //   match non_markup(i) {
+    //     Ok((i, b)) => Ok((i, Creole::Text(b))),
+    //     Err(e) => Err(e)
+    //   }
+    // })(i);
+    // let r : IResult<&str, Vec<&str>> = texts(i);
+    if dbg {println!("after many1 finish:{:?}, {}", r, i)}
+    if let Ok((i, vv)) = r{
+      // for vvv in vv {
+        // v.push(Creole::Text(vvv));
+      // }
+      // v.push(Creole::Text(vv));
+      v.extend(vv);
+    }
+    // let r = bold(i);
+    // if let Ok((i, vv)) = r{
+    //   v.push((Creole::Bold(vv)))
+    // }
+  //   Ok((&i[len..], v))
+  // }else{
+  //   Ok((i, v))
+  // }
+  Ok((i, v))
+}
+
 // #[test]
 // fn tests() {
 //   assert_eq!(text("a"), Ok(("", "a")));
@@ -251,17 +248,17 @@ mod tests {
   fn text_tests() {
     init ();
 
-    assert_eq!(creoles("ab1"), Ok(("", vec![Creole::Text("ab1")])));
+    assert_eq!(_creoles("ab1"), Ok(("", vec![Creole::Text("ab1")])));
   }
 
   #[test]
   fn text_style_tests() {
     init ();
 
-    assert_eq!(creoles("**a**"), Ok(("", vec![Creole::Bold("a")])));
-    assert_eq!(creoles("//a//"), Ok(("", vec![Creole::Italic("a")])));
+    assert_eq!(_creoles("**a**"), Ok(("", vec![Creole::Bold("a")])));
+    assert_eq!(_creoles("//a//"), Ok(("", vec![Creole::Italic("a")])));
     assert_eq!(
-      creoles("a**b**//c//d"),
+      _creoles("a**b**//c//d"),
       Ok((
         "",
         vec![
@@ -279,7 +276,7 @@ mod tests {
     init ();
 
     assert_eq!(
-      creoles("a\nb\n\nc"),
+      _creoles("a\nb\n\nc"),
       Ok((
         "",
         vec![
@@ -291,7 +288,7 @@ mod tests {
       ))
     );
     assert_eq!(
-      creoles("a\\\\b"),
+      _creoles("a\\\\b"),
       Ok((
         "",
         vec![Creole::Text("a"), Creole::Linebreak, Creole::Text("b")]
@@ -303,17 +300,17 @@ mod tests {
   fn list_tests() {
     init ();
 
-    assert_eq!(creoles("* a"), Ok(("", vec![Creole::BulletList(0, "a")])));
-    assert_eq!(creoles("** b"), Ok(("", vec![Creole::BulletList(1, "b")])));
-    assert_eq!(creoles("*** c"), Ok(("", vec![Creole::BulletList(2, "c")])));
+    assert_eq!(_creoles("* a"), Ok(("", vec![Creole::BulletList(0, "a")])));
+    assert_eq!(_creoles("** b"), Ok(("", vec![Creole::BulletList(1, "b")])));
+    assert_eq!(_creoles("*** c"), Ok(("", vec![Creole::BulletList(2, "c")])));
 
-    assert_eq!(creoles("# a"), Ok(("", vec![Creole::NumberedList(0, "a")])));
+    assert_eq!(_creoles("# a"), Ok(("", vec![Creole::NumberedList(0, "a")])));
     assert_eq!(
-      creoles("## b"),
+      _creoles("## b"),
       Ok(("", vec![Creole::NumberedList(1, "b")]))
     );
     assert_eq!(
-      creoles("### c"),
+      _creoles("### c"),
       Ok(("", vec![Creole::NumberedList(2, "c")]))
     );
   }
@@ -322,32 +319,32 @@ mod tests {
   fn heading_tests() {
     init ();
 
-    assert_eq!(creoles("== a"), Ok(("", vec![Creole::Heading(0, "a")])));
-    assert_eq!(creoles("=== b"), Ok(("", vec![Creole::Heading(1, "b")])));
-    assert_eq!(creoles("==== c"), Ok(("", vec![Creole::Heading(2, "c")])));
+    assert_eq!(_creoles("== a"), Ok(("", vec![Creole::Heading(0, "a")])));
+    assert_eq!(_creoles("=== b"), Ok(("", vec![Creole::Heading(1, "b")])));
+    assert_eq!(_creoles("==== c"), Ok(("", vec![Creole::Heading(2, "c")])));
   }
 
   // #[test]
   // fn link_tests(){
-  //   assert_eq!(creoles("[[a]] "), Ok(("", vec![Creole::Link("", "a")])));
-  //   assert_eq!(creoles("[[https://google.com|google]] "), Ok(("", vec![Creole::Link("https://google.com", "google")])));
+  //   assert_eq!(_creoles("[[a]] "), Ok(("", vec![Creole::Link("", "a")])));
+  //   assert_eq!(_creoles("[[https://google.com|google]] "), Ok(("", vec![Creole::Link("https://google.com", "google")])));
   // }
 
   #[test]
   fn other_tests() {
     init ();
 
-    assert_eq!(creoles("----"), Ok(("", vec![Creole::HorizontalLine])));
+    assert_eq!(_creoles("----"), Ok(("", vec![Creole::HorizontalLine])));
     assert_eq!(
-      creoles("a\n----\nb"),
+      _creoles("a\n----\nb"),
       Ok((
         "",
         vec![Creole::Text("a"), Creole::HorizontalLine, Creole::Text("b")]
       ))
     );
-    //   assert_eq!(creoles("{{a.jpg|b}}"), Ok(("", vec![Creole::Image("a.jpg", "b")])));
-    //   assert_eq!(creoles("|=|=a|=b|\n|0|1|2|\n|3|4|5|"), Ok(("", vec![Creole::TableHeaderCell(""), Creole::TableHeaderCell("a"), Creole::TableHeaderCell("b"), Creole::TableRowCell("0"), Creole::TableRowCell("1"), Creole::TableRowCell("2"), Creole::TableRowCell("3"), Creole::TableRowCell("4"), Creole::TableRowCell("5")])));
-    //   assert_eq!(creoles("{{{\n== [[no]]:\n//**don't** format//\n}}}"), Ok(("", vec![Creole::Text("== [[no]]:\n//**don't** format//")])));
+    //   assert_eq!(_creoles("{{a.jpg|b}}"), Ok(("", vec![Creole::Image("a.jpg", "b")])));
+    //   assert_eq!(_creoles("|=|=a|=b|\n|0|1|2|\n|3|4|5|"), Ok(("", vec![Creole::TableHeaderCell(""), Creole::TableHeaderCell("a"), Creole::TableHeaderCell("b"), Creole::TableRowCell("0"), Creole::TableRowCell("1"), Creole::TableRowCell("2"), Creole::TableRowCell("3"), Creole::TableRowCell("4"), Creole::TableRowCell("5")])));
+    //   assert_eq!(_creoles("{{{\n== [[no]]:\n//**don't** format//\n}}}"), Ok(("", vec![Creole::Text("== [[no]]:\n//**don't** format//")])));
   }
 
 }
