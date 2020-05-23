@@ -10,5 +10,10 @@ readme = "README.md"
 keywords = ["wiki", "markdown", "parser", "creole", "nom"]
 categories = ["parser-implementations"]
 exclude = [ "*.sh" ]
+
 [dependencies]
 nom = "6.0.0-alpha1"
+log = "0.4"
+
+[dev-dependencies]
+env_logger = "0.7.1"
