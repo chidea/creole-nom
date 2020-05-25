@@ -1,9 +1,11 @@
 #[macro_use] extern crate log;
 #[macro_use] extern crate nom;
-#[macro_use] extern crate serde;
+extern crate serde;
 
 pub mod parser;
+pub mod creole;
 
 pub mod prelude {
-  pub use crate::parser::{creoles, Creole};
+  pub use crate::parser::{creoles, };
+  pub use crate::creole::{Creole, };
 }

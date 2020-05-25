@@ -1,1 +1,1 @@
-clear && cargo test -- --nocapture
+clear && RUST_LOG=debug cargo test -- --nocapture

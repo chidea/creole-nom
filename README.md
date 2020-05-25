@@ -6,12 +6,13 @@ WikiCreole markup language parser by nom
  - [x] bold
  - [x] bullet list
  - [x] numbered list
- - [ ] link
- - [ ] link with name
+ - [x] link
+ - [x] link with name
  - [x] heading
  - [x] linebreak
  - [x] force linebreak
  - [x] horizontal line
- - [ ] image with title
+ - [x] image
+ - [x] image with title
  - [ ] table
  - [ ] escape (don't format)
