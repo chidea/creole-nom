@@ -1,5 +1,5 @@
-use std::borrow::Borrow;
-use std::ops::Deref;
+// use std::borrow::Borrow;
+// use std::ops::Deref;
 use std::fmt::Debug;
 use serde::{Deserialize, Serialize};
 use nom::{
@@ -25,8 +25,7 @@ impl ParseError<&str> for CreoleErr {
 
 
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-// pub enum _Creole<T:Into<String>+Sized>{
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum _Creole<T>{
   Text(T),
   Bold(T),
@@ -40,8 +39,18 @@ pub enum _Creole<T>{
   Image(T, T),
   TableHeaderCell(T),
   TableRowCell(T),
-  // Escape(T),
+  // /// final wrapper
+  // Creoles(Vec<_Creole<T>>),
 }
+
+// impl <T:Clone> _Creole<T> {
+//   pub fn to_vec(&self) -> Vec<Self> {
+//     match self {
+//       Self::Creoles(v) => v.to_vec(),
+//       _ => vec![]
+//     }
+//   }
+// }
 
 /// String version for wrapping up by implicit lifetime struct/enum
 pub type Creole = _Creole<String>;
@@ -72,8 +81,8 @@ impl<T, U> PartialEq<_Creole<U>> for _Creole<T> where T:Debug, U:Debug {
 }
 
 /* Vector wrapper */
-#[derive(Debug, Clone)]
-pub struct _Creoles<T>(Vec<_Creole<T>>);
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct _Creoles<T>(pub Vec<_Creole<T>>);
 pub type Creoles = _Creoles<String>;
 pub type ICreoles<'a> = _Creoles<&'a str>;
 
@@ -104,6 +113,11 @@ pub type ICreoles<'a> = _Creoles<&'a str>;
 //     _Creoles::<T>(v)
 //   }
 // }
+impl<T> _Creoles<T> {
+  pub fn iter(&self) -> std::slice::Iter<'_, _Creole<T>> {
+    self.0.iter()
+  }
+}
 impl<T> From<_Creoles<T>> for Vec<_Creole<T>> {
   fn from(v: _Creoles<T>) -> Self {
     v.0

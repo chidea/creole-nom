@@ -7,5 +7,5 @@ pub mod creole;
 
 pub mod prelude {
   pub use crate::parser::{creoles, };
-  pub use crate::creole::{Creole, };
+  pub use crate::creole::{Creole, Creoles, };
 }

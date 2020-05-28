@@ -18,13 +18,12 @@ use {
     },
     combinator::{/* map, map_opt, map_res, value, verify, */ rest},
     // sequence::{delimited, preceded, tuple},
-    char, tag, is_not, take_while_m_n, /* take_while,  */take, take_while1, //take_str,// re_find,
+    char, tag, is_not, take_while_m_n, take, take_while1, //take_str,// re_find,
     // many0, many1_count,
   },
-  crate::creole::{CreoleErr, Creole, Creoles, ICreole, ICreoles},
+  crate::creole::{CreoleErr, Creole, Creoles, },
 };
 
-// named!(escape, delimited!(tag!("{{{"), is_not!("}}}"), tag!("}}}")));
 // named!(line, take_while!(is_not_line_end));
 // named!(space, take_while!(is_space));
 named!(take1, take!(1));
@@ -38,6 +37,7 @@ named!(numberedlist<&str, &str>, terminated!(take_while1!(is_numlist), char!(' '
 named!(bulletlist<&str, &str>, terminated!(take_while1!(is_bulletlist), char!(' ')));
 named!(heading<&str, &str>, terminated!(take_while_m_n!(2, 7, is_heading), char!(' ')));
 named!(horizontal<&str, &str>, tag!("----"));
+named!(escape<&str, &str>, delimited!(tag!("{{{"), is_not!("}}}"), tag!("}}}")));
 // fn is_markup(c: char) -> bool {
 //   MARKUPS.contains(c)
 // }
@@ -106,10 +106,7 @@ fn creole_line<'a>(i:&'a str) -> IResult<&'a str, Vec<Creole>> {
       debug!("text left:{}:{}", len, i);
       let text = nom::bytes::complete::take_while1::<_, &str, CreoleErr>(|c| !INLINE_MARKUP_STARTS.contains(c) );
 
-      if let Ok((i, b)) = text(i) {
-        debug!("normal text:{}:{}:{}:{}", b.len(), b, i.len(), i);
-        Ok((i, Creole::Text(b.to_owned())))
-      } else if let Ok((i, _b)) = force_linebreak(i) {
+      if let Ok((i, _b)) = force_linebreak(i) {
         debug!("linebreak");
         Ok((i, Creole::Linebreak))
       } else if let Ok((i, _b)) = horizontal(i){
@@ -121,20 +118,26 @@ fn creole_line<'a>(i:&'a str) -> IResult<&'a str, Vec<Creole>> {
       } else if let Ok((i, b)) = italic(i) {
         debug!("italic:{}", b);
         Ok((i, Creole::Italic(b.to_owned())))
+      } else if let Ok((i, b)) = escape(i) {
+        debug!("escape:{}", b);
+        Ok((i, Creole::Text(b.to_owned())))
       } else if let Ok((i, b)) = image(i) {
-        debug!("link");
+        debug!("link:{}", b);
         let (name, url) = match b.chars().position(|c| c == '|'){
           Some(i) => (&b[..i], &b[i+1..]),
           None => (b, "")
         };
         Ok((i, Creole::Image(name.to_owned(), url.to_owned())))
       } else if let Ok((i, b)) = link(i) {
-        debug!("image");
+        debug!("image:{}", b);
         let (name, url) = match b.chars().position(|c| c == '|'){
           Some(i) => (&b[..i], &b[i+1..]),
           None => (b, "")
         };
         Ok((i, Creole::Link(name.to_owned(), url.to_owned())))
+      } else if let Ok((i, b)) = text(i) {
+        debug!("normal text:{}:{}:{}:{}", b.len(), b, i.len(), i);
+        Ok((i, Creole::Text(b.to_owned())))
       } else {
         debug!("unfinished markup:{}:{}", i.len(), i);
         Ok((&i[1..], Creole::Text((&i[..1]).to_owned())))
@@ -214,6 +217,7 @@ pub fn try_creoles<'a>(i:&'a str) -> IResult<&'a str, Creoles> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::creole::{ICreole, ICreoles};
 
   fn init() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -288,6 +292,7 @@ mod tests {
     assert_eq!(creoles("{{a.jpg}}"), vec![ICreole::Image("a.jpg", "")]);
     assert_eq!(creoles("{{a.jpg|b}}"), vec![ICreole::Image("a.jpg", "b")]);
   //   assert_eq!(creoles("|=|=a|=b|\n|0|1|2|\n|3|4|5|"), vec![ICreole::TableHeaderCell(""), ICreole::TableHeaderCell("a"), ICreole::TableHeaderCell("b"), ICreole::TableRowCell("0"), ICreole::TableRowCell("1"), ICreole::TableRowCell("2"), ICreole::TableRowCell("3"), ICreole::TableRowCell("4"), ICreole::TableRowCell("5")]);
-  //   assert_eq!(creoles("{{{\n== [[no]]:\n//**don't** format//\n}}}"), vec![ICreole::Text("== [[no]]:\n//**don't** format//")]);
+    assert_eq!(creoles("{{{== [[no]]://**don't** format//}}}"), vec![ICreole::Text("== [[no]]://**don't** format//")]);
+    assert_eq!(creoles("{{{\n== [[no]]:\n//**don't** format//\n}}}"), vec![ICreole::Text("== [[no]]:\n//**don't** format//")]);
   }
 }
