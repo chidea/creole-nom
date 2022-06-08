@@ -14,5 +14,12 @@ WikiCreole markup language parser by nom
  - [x] horizontal line
  - [x] image
  - [x] image with title
- - [ ] table
- - [ ] escape (don't format)
+ - [x] table
+ - [x] escape (don't format)
+
+### Extended support
+ - [x] link/image/bold/italic in heading/list/table
+
+### Possible future todos
+ - [ ] link in image title
+ - [ ] image in link title
