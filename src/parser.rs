@@ -1,11 +1,15 @@
 use {
   nom::{
     IResult,
-    InputLength,
-    InputTakeAtPosition,
-    Parser,
+    // InputLength,
+    // InputTakeAtPosition,
+    // Parser,
     // Err,
-    error::{Error, ErrorKind, ParseError, },
+    error::{
+      // Error,
+      ErrorKind,
+      ParseError,
+    },
     character::{
       complete::{
         char,
@@ -38,7 +42,7 @@ use {
       map, // apply function to the result of parser
       // map_opt, // same, returns Option<_>
       // map_res, // same, returns Result<_>
-      map_parser, // parser after parser
+      // map_parser, // parser after parser
       value, // return first argument as parser result if parser succeed
       verify, // same, if given verify function returns true over parser result
       rest, // return all remaining input
@@ -57,7 +61,9 @@ use {
       // length_value, // result of first parser is the count to take and it's the input to second parser
       // many0_count, // repeat parser until fails and return the count of successful iteration
       // many1_count, // same, fail on zero
-      many0, many1, many_m_n,
+      many0,
+      // many1,
+      many_m_n,
       // many_till,
       separated_list0, separated_list1, // two parsers for list
     },
@@ -92,8 +98,8 @@ fn text_style(input: &str) -> IResult<&str, ICreole<'_>> {
     value(ICreole::ForceLinebreak, tag("\\\\")),
     bold,
     italic,
-    #[cfg(feature="font-color")]
-    font_color,
+    // #[cfg(feature="font-color")]
+    // font_color,
   ))(input)
 }
 
@@ -284,7 +290,7 @@ where F: FnMut(&'a str) -> IResult<&'a str, &'a str>,
     let mut i = input;
     let mut l = 0;
     while !i.is_empty() {
-      if let Ok((i, v)) = term_parser(i) {
+      if let Ok((i, _v)) = term_parser(i) {
         return Ok((i, (fail_parser(&input[..l]).ok().map(|(_, v)| v), None)))
       } else if let Ok((r, v)) = parser(i) {
         return Ok((r, (fail_parser(&input[..l]).ok().map(|(_, v)| v), Some(v))))
@@ -313,20 +319,20 @@ where F: FnMut(&'a str) -> IResult<&'a str, ICreole<'a>> + Copy,
   move |input : &str| take_while_parser_fail_or(peek(tag(term_tag)), parser, fail_parser)(input)
 }
 
-#[cfg(feature="link-button")]
-fn link_button(input: &str) -> IResult<&str, ICreole> {
-  map(delimited(tag("[{"), alt((
-    separated_pair(is_not("|]}\n"), tag("|"), is_not("|]}\n")),
-    map(is_not("]}\n"), |label: &str| -> (&str, &str) { (label, label) }),
-  )), tag("]}")), |(link, label)| ICreole::LinkButton(label, link, ""))(input)
-}
-#[cfg(feature="font-color")]
-fn font_color(input: &str) -> IResult<&str, ICreole> {
-  map(delimited(tag("[{"), alt((
-    separated_pair(is_not("|]}\n"), tag("|"), is_not("|]}\n")),
-    map(is_not("]}\n"), |label: &str| -> (&str, &str) { (label, label) }),
-  )), tag("]}")), |(link, label)| ICreole::Link(label, link))(input)
-}
+// #[cfg(feature="link-button")]
+// fn link_button(input: &str) -> IResult<&str, ICreole> {
+//   map(delimited(tag("[{"), alt((
+//     separated_pair(is_not("|]}\n"), tag("|"), is_not("|]}\n")),
+//     map(is_not("]}\n"), |label: &str| -> (&str, &str) { (label, label) }),
+//   )), tag("]}")), |(link, label)| ICreole::LinkButton(label, link, ""))(input)
+// }
+// #[cfg(feature="font-color")]
+// fn font_color(input: &str) -> IResult<&str, ICreole> {
+//   map(delimited(tag("[{"), alt((
+//     separated_pair(is_not("|]}\n"), tag("|"), is_not("|]}\n")),
+//     map(is_not("]}\n"), |label: &str| -> (&str, &str) { (label, label) }),
+//   )), tag("]}")), |(link, label)| ICreole::Link(label, link))(input)
+// }
 
 fn heading(input: &str) -> IResult<&str, ICreole> {
   map(separated_pair(
@@ -391,10 +397,10 @@ fn table(input: &str) -> IResult<&str, ICreole> {
   }
 }
 
-#[cfg(feature="fold")]
-fn fold(input: &str) -> IResult<&str, ICreole> {
-  map(map_parser(tag("---<"), rest), |rest| ICreole::Fold(rest))(input)
-}
+// #[cfg(feature="fold")]
+// fn fold(input: &str) -> IResult<&str, ICreole> {
+//   map(map_parser(tag("---<"), rest), |rest| ICreole::Fold(rest))(input)
+// }
 
 fn line(input :&str) -> IResult<&str, ICreole> {
   map(collect_opt_pair0(take_while_parser_fail_or(alt((recognize(pair(char('\n'), peek(char('\n')))), peek(recognize(preceded(char('\n'), creole_inner))))), lit, text)), |v| ICreole::Line(v))
@@ -598,7 +604,7 @@ mod tests {
     ])));
     assert_eq!(collect_opt_pair1(take_while_parser_fail(creole_inner, text))("a\n== b"), Ok(("", vec![
       Text("a\n"),
-      Heading(0, vec![Text("b")]),
+      Heading(1, vec![Text("b")]),
     ])));
     assert_eq!(collect_opt_pair1(take_while_parser_fail(lit, text))("a b **a**"), Ok(("", vec![
       Text("a b "),
@@ -619,24 +625,24 @@ mod tests {
   #[test]
   fn heading_tests(){ init();
     use ICreole::*;
-    assert_eq!(heading("== "), Ok(("", Heading(0, vec![]))));
-    assert_eq!(heading("== a"), Ok(("", Heading(0, vec![Text("a")]))));
-    assert_eq!(heading("== [[a]]"), Ok(("", Heading(0, vec![Link("a", "a")]))));
-    assert_eq!(heading("== a:[[a]]"), Ok(("", Heading(0, vec![Text("a:"), Link("a", "a")]))));
-    assert_eq!(try_creoles("== a"), Ok(("", vec![Heading(0, vec![Text("a")])])));
-    assert_eq!(try_creoles("== a:[[a]]"), Ok(("", vec![Heading(0, vec![Text("a:"), Link("a", "a")])])));
+    assert_eq!(heading("== "), Ok(("", Heading(1, vec![]))));
+    assert_eq!(heading("== a"), Ok(("", Heading(1, vec![Text("a")]))));
+    assert_eq!(heading("== [[a]]"), Ok(("", Heading(1, vec![Link("a", "a")]))));
+    assert_eq!(heading("== a:[[a]]"), Ok(("", Heading(1, vec![Text("a:"), Link("a", "a")]))));
+    assert_eq!(try_creoles("== a"), Ok(("", vec![Heading(1, vec![Text("a")])])));
+    assert_eq!(try_creoles("== a:[[a]]"), Ok(("", vec![Heading(1, vec![Text("a:"), Link("a", "a")])])));
 
-    assert_eq!(heading("=== b"), Ok(("", Heading(1, vec![Text("b")]))));
-    assert_eq!(heading("==== c"), Ok(("", Heading(2, vec![Text("c")]))));
-    assert_eq!(creoles("=== b"), vec![Heading(1, vec![Text("b")])]);
-    assert_eq!(creoles("==== c"), vec![Heading(2, vec![Text("c")])]);
+    assert_eq!(heading("=== b"), Ok(("", Heading(2, vec![Text("b")]))));
+    assert_eq!(heading("==== c"), Ok(("", Heading(3, vec![Text("c")]))));
+    assert_eq!(creoles("=== b"), vec![Heading(2, vec![Text("b")])]);
+    assert_eq!(creoles("==== c"), vec![Heading(3, vec![Text("c")])]);
 
-    assert_eq!(try_creoles("== [[a]]//a"), Ok(("", vec![Heading(0, vec![
+    assert_eq!(try_creoles("== [[a]]//a"), Ok(("", vec![Heading(1, vec![
       Link("a", "a"),
       Text("//a")
     ])])));
     assert_eq!(try_creoles("== [[http://www.wikicreole.org|Creole]] //Live// Editor ([[https://github.com/chidea/wasm-creole-live-editor|github]])"), Ok(("", vec![
-      Heading(0, vec![
+      Heading(1, vec![
         Link("http://www.wikicreole.org", "Creole"),
         Text(" "),
         Italic("Live"),
@@ -752,13 +758,12 @@ mod tests {
 //   //   assert_eq!(link_button("[{a|b|c}]"), LinkButton("a", "b", "c"));
 //   // }
   #[test]
-  fn mixed_tests(){ init();
-    use ICreole::*;
-    // assert_eq!(try_creoles("== a\n== b\n\n----\n"), Ok(("", vec![
-    //   Heading(0, vec![Text("a")]),
-    //   Heading(0, vec![Text("b")]),
-    //   HorizontalLine,
-    // ])));
+  fn mixed_tests(){ init(); use ICreole::*;
+    assert_eq!(try_creoles("== a\n== b\n----"), Ok(("", vec![
+      Heading(1, vec![Text("a")]),
+      Heading(1, vec![Text("b")]),
+      HorizontalLine,
+    ])));
 //     // assert_eq!(try_creoles("a[[/|home]]{{a.jpg}}"), Ok(("", vec![
 //     //   Text("a"),
 //     //   Link("/", "home"),
