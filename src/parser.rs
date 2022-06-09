@@ -81,14 +81,16 @@ use {
 };
 
 fn bold(input: &str) -> IResult<&str, ICreole<'_>> {
-    map(delimited(tag("**"), take_until("**"), tag("**")), |body| {
-        ICreole::Bold(body)
-    })(input)
+    map(
+        delimited(tag("**"), collect_opt_pair0(take_while_parser_fail_or(alt((peek(tag("**")), peek(tag("\n")))), italic, text)), tag("**")),
+        ICreole::Bold,
+    )(input)
 }
 fn italic(input: &str) -> IResult<&str, ICreole<'_>> {
-    map(delimited(tag("//"), take_until("//"), tag("//")), |body| {
-        ICreole::Italic(body)
-    })(input)
+    map(
+        delimited(tag("//"), collect_opt_pair0(take_while_parser_fail_or(alt((peek(tag("//")), peek(tag("\n")))), bold, text)), tag("//")),
+        ICreole::Italic,
+    )(input)
 }
 
 fn text_style(input: &str) -> IResult<&str, ICreole<'_>> {
@@ -419,7 +421,7 @@ where
 fn heading(input: &str) -> IResult<&str, ICreole> {
     map(
         separated_pair(
-            map(many_m_n(2, 7, char('=')), |s| s.len() - 1), // == -> h1
+            map(many_m_n(1, 6, char('=')), |s| s.len()),
             char(' '),
             take_lit_text_until0("\n"),
         ),
@@ -569,18 +571,25 @@ mod tests {
         use ICreole::*;
         assert_eq!(try_creoles("t"), Ok(("", vec![Line(vec![Text("t")])])));
 
-        assert_eq!(try_creoles("**b**"), Ok(("", vec![Line(vec![Bold("b")])])));
+        assert_eq!(try_creoles("**b**"), Ok(("", vec![Line(vec![Bold(vec![Text("b")])])])));
 
         assert_eq!(
             try_creoles("//i//"),
-            Ok(("", vec![Line(vec![Italic("i")])]))
+            Ok(("", vec![Line(vec![Italic(vec![Text("i")])])]))
         );
 
         assert_eq!(
             try_creoles("a**b**//c//d"),
             Ok((
                 "",
-                vec![Line(vec![Text("a"), Bold("b"), Italic("c"), Text("d")])]
+                vec![Line(vec![Text("a"), Bold(vec![Text("b")]), Italic(vec![Text("c")]), Text("d")])]
+            ))
+        );
+        assert_eq!(
+            try_creoles("**a//b//c**"),
+            Ok((
+                "",
+                vec![Line(vec![Bold(vec![Text("a"), Italic(vec![Text("b")]), Text("c")])])]
             ))
         );
     }
@@ -681,7 +690,7 @@ mod tests {
                 "",
                 BulletList(vec![
                     ListItem(vec![Link("a", "a")]),
-                    BulletList(vec![ListItem(vec![Italic("b")]), ListItem(vec![Bold("c")]),]),
+                    BulletList(vec![ListItem(vec![Italic(vec![Text("b")])]), ListItem(vec![Bold(vec![Text("c")])]),]),
                 ])
             ))
         );
@@ -772,19 +781,19 @@ mod tests {
         use ICreole::*;
         assert_eq!(
             take_while_parser_fail(lit, text)("a b **a**"),
-            Ok(("", (Some(Text("a b ")), Some(Bold("a")),)))
+            Ok(("", (Some(Text("a b ")), Some(Bold(vec![Text("a")])),)))
         );
         assert_eq!(
             collect_opt_pair1(take_while_parser_fail(lit, text))("a b **a**"),
-            Ok(("", vec![Text("a b "), Bold("a"),]))
+            Ok(("", vec![Text("a b "), Bold(vec![Text("a")]),]))
         );
         assert_eq!(
-            collect_opt_pair1(take_while_parser_fail(creole_inner, text))("a\n== b"),
+            collect_opt_pair1(take_while_parser_fail(creole_inner, text))("a\n= b"),
             Ok(("", vec![Text("a\n"), Heading(1, vec![Text("b")]),]))
         );
         assert_eq!(
             collect_opt_pair1(take_while_parser_fail(lit, text))("a b **a**"),
-            Ok(("", vec![Text("a b "), Bold("a"),]))
+            Ok(("", vec![Text("a b "), Bold(vec![Text("a")]),]))
         );
         assert_eq!(
             collect_opt_pair1(take_while_parser_fail(lit, text))(
@@ -796,7 +805,7 @@ mod tests {
                     // Line(vec![
                     Link("a", "b"),
                     Text(" "),
-                    Italic("Live"),
+                    Italic(vec![Text("Live")]),
                     Text(" Editor ("),
                     Link("c", "d"),
                     Text(")"),
@@ -810,39 +819,39 @@ mod tests {
     fn heading_tests() {
         init();
         use ICreole::*;
-        assert_eq!(heading("== "), Ok(("", Heading(1, vec![]))));
-        assert_eq!(heading("== a"), Ok(("", Heading(1, vec![Text("a")]))));
+        assert_eq!(heading("= "), Ok(("", Heading(1, vec![]))));
+        assert_eq!(heading("= a"), Ok(("", Heading(1, vec![Text("a")]))));
         assert_eq!(
-            heading("== [[a]]"),
+            heading("= [[a]]"),
             Ok(("", Heading(1, vec![Link("a", "a")])))
         );
         assert_eq!(
-            heading("== a:[[a]]"),
+            heading("= a:[[a]]"),
             Ok(("", Heading(1, vec![Text("a:"), Link("a", "a")])))
         );
         assert_eq!(
-            try_creoles("== a"),
+            try_creoles("= a"),
             Ok(("", vec![Heading(1, vec![Text("a")])]))
         );
         assert_eq!(
-            try_creoles("== a:[[a]]"),
+            try_creoles("= a:[[a]]"),
             Ok(("", vec![Heading(1, vec![Text("a:"), Link("a", "a")])]))
         );
 
-        assert_eq!(heading("=== b"), Ok(("", Heading(2, vec![Text("b")]))));
-        assert_eq!(heading("==== c"), Ok(("", Heading(3, vec![Text("c")]))));
-        assert_eq!(creoles("=== b"), vec![Heading(2, vec![Text("b")])]);
-        assert_eq!(creoles("==== c"), vec![Heading(3, vec![Text("c")])]);
+        assert_eq!(heading("=== b"), Ok(("", Heading(3, vec![Text("b")]))));
+        assert_eq!(heading("==== c"), Ok(("", Heading(4, vec![Text("c")]))));
+        assert_eq!(creoles("== b"), vec![Heading(2, vec![Text("b")])]);
+        assert_eq!(creoles("=== c"), vec![Heading(3, vec![Text("c")])]);
 
         assert_eq!(
-            try_creoles("== [[a]]//a"),
+            try_creoles("= [[a]]//a"),
             Ok(("", vec![Heading(1, vec![Link("a", "a"), Text("//a")])]))
         );
-        assert_eq!(try_creoles("== [[http://www.wikicreole.org|Creole]] //Live// Editor ([[https://github.com/chidea/wasm-creole-live-editor|github]])"), Ok(("", vec![
+        assert_eq!(try_creoles("= [[http://www.wikicreole.org|Creole]] //Live// Editor ([[https://github.com/chidea/wasm-creole-live-editor|github]])"), Ok(("", vec![
       Heading(1, vec![
         Link("http://www.wikicreole.org", "Creole"),
         Text(" "),
-        Italic("Live"),
+        Italic(vec![Text("Live")]),
         Text(" Editor ("),
         Link("https://github.com/chidea/wasm-creole-live-editor", "github"),
         Text(")"),
@@ -1008,11 +1017,11 @@ mod tests {
         init();
         use ICreole::*;
         assert_eq!(
-            try_creoles("== 大"),
+            try_creoles("= 大"),
             Ok(("", vec![Heading(1, vec![Text("大")])]))
         );
         assert_eq!(
-            try_creoles("== a\n== b\n----"),
+            try_creoles("= a\n= b\n----"),
             Ok((
                 "",
                 vec![
@@ -1024,9 +1033,9 @@ mod tests {
         );
         assert_eq!(
             try_creoles(
-                "== t
+                "= t
 
-== A"
+= A"
             ),
             Ok((
                 "",

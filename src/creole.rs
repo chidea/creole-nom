@@ -6,8 +6,8 @@ use std::fmt::Debug;
 pub enum ICreole<'a> {
     Text(&'a str),
     Line(Vec<ICreole<'a>>),
-    Bold(&'a str),
-    Italic(&'a str),
+    Bold(Vec<ICreole<'a>>),
+    Italic(Vec<ICreole<'a>>),
     #[cfg(feature = "font-color")]
     Color(&'a str, &'a str),
     BulletList(Vec<ICreole<'a>>),
