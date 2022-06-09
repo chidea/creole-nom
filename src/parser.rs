@@ -403,7 +403,7 @@ fn table(input: &str) -> IResult<&str, ICreole> {
 // }
 
 fn line(input :&str) -> IResult<&str, ICreole> {
-  map(collect_opt_pair0(take_while_parser_fail_or(alt((recognize(pair(char('\n'), peek(char('\n')))), peek(recognize(preceded(char('\n'), creole_inner))))), lit, text)), |v| ICreole::Line(v))
+  map(collect_opt_pair0(take_while_parser_fail_or(alt((recognize(pair(char('\n'), peek(char('\n')))), recognize(peek(preceded(char('\n'), creole_inner))))), lit, text)), |v| ICreole::Line(v))
   (input)
 }
 fn creole_inner(input: &str) -> IResult<&str, ICreole> {
@@ -766,6 +766,13 @@ mod tests {
       Heading(1, vec![Text("a")]),
       Heading(1, vec![Text("b")]),
       HorizontalLine,
+    ])));
+    assert_eq!(try_creoles("== t
+
+== A"), Ok(("", vec![
+      Heading(1, vec![Text("t")]),
+      Line(vec![]),
+      Heading(1, vec![Text("A")]),
     ])));
 //     // assert_eq!(try_creoles("a[[/|home]]{{a.jpg}}"), Ok(("", vec![
 //     //   Text("a"),
