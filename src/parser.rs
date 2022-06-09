@@ -82,13 +82,29 @@ use {
 
 fn bold(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
-        delimited(tag("**"), collect_opt_pair0(take_while_parser_fail_or(alt((peek(tag("**")), peek(tag("\n")))), italic, text)), tag("**")),
+        delimited(
+            tag("**"),
+            collect_opt_pair0(take_while_parser_fail_or(
+                alt((peek(tag("**")), peek(tag("\n")))),
+                italic,
+                text,
+            )),
+            tag("**"),
+        ),
         ICreole::Bold,
     )(input)
 }
 fn italic(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
-        delimited(tag("//"), collect_opt_pair0(take_while_parser_fail_or(alt((peek(tag("//")), peek(tag("\n")))), bold, text)), tag("//")),
+        delimited(
+            tag("//"),
+            collect_opt_pair0(take_while_parser_fail_or(
+                alt((peek(tag("//")), peek(tag("\n")))),
+                bold,
+                text,
+            )),
+            tag("//"),
+        ),
         ICreole::Italic,
     )(input)
 }
@@ -571,7 +587,10 @@ mod tests {
         use ICreole::*;
         assert_eq!(try_creoles("t"), Ok(("", vec![Line(vec![Text("t")])])));
 
-        assert_eq!(try_creoles("**b**"), Ok(("", vec![Line(vec![Bold(vec![Text("b")])])])));
+        assert_eq!(
+            try_creoles("**b**"),
+            Ok(("", vec![Line(vec![Bold(vec![Text("b")])])]))
+        );
 
         assert_eq!(
             try_creoles("//i//"),
@@ -582,14 +601,23 @@ mod tests {
             try_creoles("a**b**//c//d"),
             Ok((
                 "",
-                vec![Line(vec![Text("a"), Bold(vec![Text("b")]), Italic(vec![Text("c")]), Text("d")])]
+                vec![Line(vec![
+                    Text("a"),
+                    Bold(vec![Text("b")]),
+                    Italic(vec![Text("c")]),
+                    Text("d")
+                ])]
             ))
         );
         assert_eq!(
             try_creoles("**a//b//c**"),
             Ok((
                 "",
-                vec![Line(vec![Bold(vec![Text("a"), Italic(vec![Text("b")]), Text("c")])])]
+                vec![Line(vec![Bold(vec![
+                    Text("a"),
+                    Italic(vec![Text("b")]),
+                    Text("c")
+                ])])]
             ))
         );
     }
@@ -690,7 +718,10 @@ mod tests {
                 "",
                 BulletList(vec![
                     ListItem(vec![Link("a", "a")]),
-                    BulletList(vec![ListItem(vec![Italic(vec![Text("b")])]), ListItem(vec![Bold(vec![Text("c")])]),]),
+                    BulletList(vec![
+                        ListItem(vec![Italic(vec![Text("b")])]),
+                        ListItem(vec![Bold(vec![Text("c")])]),
+                    ]),
                 ])
             ))
         );
