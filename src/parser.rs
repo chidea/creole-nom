@@ -84,11 +84,7 @@ fn bold(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         delimited(
             tag("**"),
-            collect_opt_pair0(take_while_parser_fail_or(
-                alt((peek(tag("**")), peek(tag("\n")))),
-                italic,
-                text,
-            )),
+            collect_while_parser_fail_or0(alt((peek(tag("**")), peek(tag("\n")))), italic, text),
             tag("**"),
         ),
         ICreole::Bold,
@@ -98,11 +94,11 @@ fn italic(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         delimited(
             tag("//"),
-            collect_opt_pair0(take_while_parser_fail_or(
+            collect_while_parser_fail_or0(
                 alt((peek(tag("//")), peek(tag("\n")))),
-                bold,
+                alt((bold, link)),
                 text,
-            )),
+            ),
             tag("//"),
         ),
         ICreole::Italic,
@@ -161,14 +157,9 @@ fn _list<'a>(
             // debug!("list line : {}", line);
             if line.starts_with(&head_space) {
                 // sibling
-                if let Ok((_, v)) = map(
-                    alt((
-                        collect_opt_pair1(take_while_parser_fail(lit, text)),
-                        success(vec![]),
-                    )),
-                    ICreole::ListItem,
-                )(&line[head_space.len()..])
-                {
+                if let Ok((_, v)) = map(collect_while_parser_fail0(lit, text), ICreole::ListItem)(
+                    &line[head_space.len()..],
+                ) {
                     rst.push(v);
                 }
             } else {
@@ -240,14 +231,10 @@ fn take_lit_text_until0(
     }
 }
 
-fn take_while_parser_fail<'a, F, G>(
-    mut parser: F,
-    mut fail_parser: G,
-) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>
-where
-    F: FnMut(&str) -> IResult<&str, ICreole>,
-    G: FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
-{
+fn take_while_parser_fail<'a>(
+    mut parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+    mut fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)> {
     move |input: &str| {
         // debug!("take_while_parser_fail input : {}", input);
         // let mut i = input;
@@ -292,39 +279,10 @@ where
     }
 }
 
-fn collect_opt_pair0<'a, F>(
-    mut parser: F,
-) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>,
-{
-    move |input: &str| {
-        let mut rst = vec![];
-        let mut i = input;
-        // debug!("collect_opt_pair input : {}", i);
-        while let Ok((r, t)) = parser(i) {
-            // debug!("collect_opt_pair i : {}, r: {}", i, r);
-            i = r;
-            match t {
-                (Some(a), Some(b)) => {
-                    rst.push(a);
-                    rst.push(b);
-                }
-                (None, Some(b)) => {
-                    rst.push(b);
-                }
-                (Some(a), None) => {
-                    rst.push(a);
-                    break;
-                }
-                _ => {
-                    break;
-                }
-            }
-        }
-        // debug!("collect_opt_pair rst : {:?}", rst);
-        Ok((i, rst))
-    }
+fn collect_opt_pair0<'a>(
+    parser: impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>> {
+    alt((collect_opt_pair1(parser), success(vec![])))
 }
 fn collect_opt_pair1<'a, F>(
     mut parser: F,
@@ -407,16 +365,27 @@ where
     }
 }
 
-fn take_while_parser_fail_or_peek_tag<'a, F, G>(
+fn take_while_parser_fail_or_peek_tag<'a>(
     term_tag: &'static str,
-    parser: F,
-    fail_parser: G,
-) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, ICreole<'a>> + Copy,
-    G: FnMut(&'a str) -> IResult<&'a str, ICreole<'a>> + Copy,
-{
-    move |input: &str| take_while_parser_fail_or(peek(tag(term_tag)), parser, fail_parser)(input)
+    parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+    fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)> {
+    take_while_parser_fail_or(peek(tag(term_tag)), parser, fail_parser)
+}
+
+fn collect_while_parser_fail_or0<'a>(
+    term_parser: impl FnMut(&'a str) -> IResult<&'a str, &'a str>,
+    parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+    fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>> {
+    collect_opt_pair0(take_while_parser_fail_or(term_parser, parser, fail_parser))
+}
+
+fn collect_while_parser_fail0<'a>(
+    parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+    fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>> {
+    collect_opt_pair0(take_while_parser_fail(parser, fail_parser))
 }
 
 // #[cfg(feature="link-button")]
@@ -446,7 +415,7 @@ fn heading(input: &str) -> IResult<&str, ICreole> {
 }
 fn dont_format(input: &str) -> IResult<&str, ICreole> {
     map(
-        delimited(tag("{{{\n"), take_until("\n}}}"), tag("\n}}}")),
+        delimited(tag("{{{"), take_until("}}}"), tag("}}}")),
         ICreole::DontFormat,
     )(input)
 }
@@ -529,14 +498,14 @@ fn table(input: &str) -> IResult<&str, ICreole> {
 
 fn line(input: &str) -> IResult<&str, ICreole> {
     map(
-        collect_opt_pair0(take_while_parser_fail_or(
+        collect_while_parser_fail_or0(
             alt((
                 recognize(pair(char('\n'), peek(char('\n')))),
                 recognize(peek(preceded(char('\n'), creole_inner))),
             )),
             lit,
             text,
-        )),
+        ),
         ICreole::Line,
     )(input)
 }
