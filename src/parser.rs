@@ -226,6 +226,9 @@ fn image(input: &str) -> IResult<&str, ICreole> {
 fn lit(input: &str) -> IResult<&str, ICreole> {
     alt((link, image, text_style))(input)
 }
+fn dlit(input: &str) -> IResult<&str, ICreole> {
+    alt((dont_format, lit))(input)
+}
 fn text(input: &str) -> IResult<&str, ICreole> {
     map(verify(rest, |s: &str| !s.is_empty()), |s: &str| {
         ICreole::Text(s)
@@ -241,7 +244,7 @@ fn take_dlit_text_until_peek_char0<'a>(
 ) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole>> {
     collect_opt_pair0(take_while_parser_fail_or(
         value(true, peek(char(until_char))),
-        alt((dont_format, lit)),
+        dlit,
         text,
     ))
 }
@@ -522,7 +525,7 @@ fn line(input: &str) -> IResult<&str, ICreole> {
                 value(true, pair(char('\n'), peek(char('\n')))),
                 value(true, peek(preceded(char('\n'), creole_inner))),
             )),
-            lit,
+            dlit,
             text,
         ),
         ICreole::Line,
