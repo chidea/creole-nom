@@ -15,13 +15,13 @@ WikiCreole markup language parser by nom
  - [x] image
  - [x] image with title
  - [x] table
- - [x] escape (don't format)
+ - [x] nowiki (don't format)
 
 ### Strict 1.0 (from [test cases](http://www.wikicreole.org/wiki/Creole1.0TestCases))
- - [ ] inline nowiki
- - [x] dont format in table
- - [ ] allow spaces at end of table row
- - [ ] allow spaces at start of list row
+ - [x] inline nowiki
+ - [x] nowiki in table
+ - [x] allow spaces at end of table row
+ - [x] allow spaces at start of list row
  - [ ] tilde escape
  - [ ] free link
  - [ ] italic link

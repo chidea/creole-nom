@@ -1,5 +1,7 @@
+#[cfg(debug_assertions)]
+#[allow(unused_imports)]
+use log::{debug, error, info};
 use {
-    // log::{debug, error, info},
     crate::creole::ICreole,
     nom::{
         branch::alt,
@@ -21,7 +23,8 @@ use {
             // not_line_ending, line_ending,
             // none_of,
             one_of,
-            // space0, space1,
+            space0,
+            // space1,
             // multispace0, multispace1,
         },
         combinator::{
@@ -123,11 +126,12 @@ fn list_head_char(input: &str) -> IResult<&str, char> {
     one_of("*#")(input)
 }
 fn list(input: &str) -> IResult<&str, ICreole> {
+    let input = input.trim_start();
     let (_, head) = list_head_char(input)?;
     let (r, lines) = separated_list0(
         char('\n'),
         recognize(separated_pair(
-            preceded(char(head), many0(list_head_char)),
+            preceded(space0, preceded(char(head), many0(list_head_char))),
             char(' '),
             alt((is_not("\n"), success(""))),
         )),
@@ -157,7 +161,7 @@ fn _list<'a>(
                 to_skip -= 1;
                 continue;
             }
-            let line = input[i];
+            let line = input[i].trim_start();
             // debug!("list line : {}", line);
             if line.starts_with(&head_space) {
                 // sibling
@@ -437,7 +441,12 @@ fn table_header_row(input: &str) -> IResult<&str, ICreole> {
         tag("|="),
         map(
             alt((
-                terminated(verify(is_not("\n"), |s: &str| s.ends_with('|')), tag("\n")),
+                terminated(
+                    verify(map(is_not("\n"), |s: &str| s.trim_end()), |s: &str| {
+                        s.ends_with('|')
+                    }),
+                    char('\n'),
+                ),
                 verify(rest, |s: &str| s.len() > 1 && s.ends_with('|')),
             )),
             |s: &str| &s[..(s.len() - 1)],
@@ -452,11 +461,15 @@ fn table_header_row(input: &str) -> IResult<&str, ICreole> {
 }
 fn table_cell_row(input: &str) -> IResult<&str, ICreole> {
     let (left, line) = preceded(
-        tag("|"),
+        char('|'),
         map(
             alt((
-                verify(is_not("\n"), |s: &str| s.ends_with('|')),
-                verify(rest, |s: &str| s.len() > 1 && s.ends_with('|')),
+                verify(map(is_not("\n"), |s: &str| s.trim_end()), |s: &str| {
+                    s.ends_with('|')
+                }),
+                verify(map(rest, |s: &str| s.trim_end()), |s: &str| {
+                    s.len() > 1 && s.ends_with('|')
+                }),
             )),
             |s: &str| &s[..(s.len() - 1)],
         ),
@@ -780,6 +793,14 @@ mod tests {
                 ]
             ))
         );
+        assert_eq!(
+            list(" * a"),
+            Ok(("", BulletList(vec![ListItem(vec![Text("a")])])))
+        );
+        assert_eq!(
+            list("  * a"),
+            Ok(("", BulletList(vec![ListItem(vec![Text("a")])])))
+        );
     }
     #[test]
     fn parser_tests() {
@@ -916,8 +937,8 @@ mod tests {
 
         assert_eq!(
             table(
-                "|=|=table|=header|
-|a|table|row|
+                "|=|=table|=header| 
+|a|table|row| 
 |b|{{{ // don't format // }}}|{{{ ** me ** }}}|
 |c||empty|"
             ),
