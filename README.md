@@ -17,9 +17,18 @@ WikiCreole markup language parser by nom
  - [x] table
  - [x] escape (don't format)
 
-### Extended support
- - [x] link/image/bold/italic in heading/list/table
+### Strict 1.0 (from [test cases](http://www.wikicreole.org/wiki/Creole1.0TestCases))
+ - [ ] inline nowiki
+ - [ ] dont format in table
+ - [ ] allow spaces at end of table row
+ - [ ] allow spaces at start of list row
+ - [ ] tilde escape
+ - [ ] free link
+ - [ ] italic link
+ - [ ] italic/bold extend across line
 
-### Possible future todos
+### Extended features over 1.0
+ - [x] link/image/bold/italic in heading/list/table
  - [ ] link in image title
  - [ ] image in link title
+ - [ ] text colors
