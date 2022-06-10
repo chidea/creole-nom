@@ -84,7 +84,11 @@ fn bold(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         delimited(
             tag("**"),
-            collect_while_parser_fail_or0(alt((value(true, peek(tag("**"))), value(true, peek(char('\n'))))), italic, text),
+            collect_while_parser_fail_or0(
+                alt((value(true, peek(tag("**"))), value(true, peek(char('\n'))))),
+                italic,
+                text,
+            ),
             tag("**"),
         ),
         ICreole::Bold,
@@ -95,7 +99,7 @@ fn italic(input: &str) -> IResult<&str, ICreole<'_>> {
         delimited(
             tag("//"),
             collect_while_parser_fail_or0(
-                alt((value(true, peek(tag("//"))), value( true, peek(char('\n'))))),
+                alt((value(true, peek(tag("//"))), value(true, peek(char('\n'))))),
                 alt((bold, link)),
                 text,
             ),
@@ -231,7 +235,11 @@ fn take_lit_text_until0<'a>(
 fn take_dlit_text_until_peek_char0<'a>(
     until_char: char,
 ) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole>> {
-    collect_opt_pair0(take_while_parser_fail_or(value(true, peek(char(until_char))), alt((dont_format, lit)), text))
+    collect_opt_pair0(take_while_parser_fail_or(
+        value(true, peek(char(until_char))),
+        alt((dont_format, lit)),
+        text,
+    ))
 }
 
 fn take_while_parser_fail<'a>(
@@ -289,8 +297,7 @@ fn collect_opt_pair0<'a>(
 }
 fn collect_opt_pair1<'a>(
     mut parser: impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>,
-) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>>
-{
+) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>> {
     move |input: &str| {
         let mut rst = vec![];
         let mut i = input;
@@ -331,8 +338,7 @@ fn take_while_parser_fail_or<'a>(
     mut term_parser: impl FnMut(&'a str) -> IResult<&'a str, bool>,
     mut parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
     mut fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
-) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>
-{
+) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)> {
     move |input: &str| {
         let mut l = 0;
         for (i, c) in input.char_indices().by_ref() {
@@ -418,7 +424,10 @@ fn dont_format(input: &str) -> IResult<&str, ICreole> {
 }
 
 fn table_header_cell_inner(input: &str) -> IResult<&str, ICreole> {
-    map(take_dlit_text_until_peek_char0('|'), ICreole::TableHeaderCell)(input)
+    map(
+        take_dlit_text_until_peek_char0('|'),
+        ICreole::TableHeaderCell,
+    )(input)
 }
 fn table_cell_inner(input: &str) -> IResult<&str, ICreole> {
     map(take_dlit_text_until_peek_char0('|'), ICreole::TableCell)(input)
