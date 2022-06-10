@@ -19,7 +19,7 @@ WikiCreole markup language parser by nom
 
 ### Strict 1.0 (from [test cases](http://www.wikicreole.org/wiki/Creole1.0TestCases))
  - [ ] inline nowiki
- - [ ] dont format in table
+ - [x] dont format in table
  - [ ] allow spaces at end of table row
  - [ ] allow spaces at start of list row
  - [ ] tilde escape

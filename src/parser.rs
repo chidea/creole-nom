@@ -84,7 +84,7 @@ fn bold(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         delimited(
             tag("**"),
-            collect_while_parser_fail_or0(alt((peek(tag("**")), peek(tag("\n")))), italic, text),
+            collect_while_parser_fail_or0(alt((value(true, peek(tag("**"))), value(true, peek(char('\n'))))), italic, text),
             tag("**"),
         ),
         ICreole::Bold,
@@ -95,7 +95,7 @@ fn italic(input: &str) -> IResult<&str, ICreole<'_>> {
         delimited(
             tag("//"),
             collect_while_parser_fail_or0(
-                alt((peek(tag("//")), peek(tag("\n")))),
+                alt((value(true, peek(tag("//"))), value( true, peek(char('\n'))))),
                 alt((bold, link)),
                 text,
             ),
@@ -223,12 +223,15 @@ fn text(input: &str) -> IResult<&str, ICreole> {
         ICreole::Text(s)
     })(input)
 }
-fn take_lit_text_until0(
+fn take_lit_text_until0<'a>(
     until_tag: &'static str,
-) -> impl FnMut(&str) -> IResult<&str, Vec<ICreole>> {
-    move |input: &str| {
-        collect_opt_pair0(take_while_parser_fail_or_peek_tag(until_tag, lit, text))(input)
-    }
+) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole>> {
+    collect_opt_pair0(take_while_parser_fail_or_peek_tag(until_tag, lit, text))
+}
+fn take_dlit_text_until_peek_char0<'a>(
+    until_char: char,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole>> {
+    collect_opt_pair0(take_while_parser_fail_or(value(true, peek(char(until_char))), alt((dont_format, lit)), text))
 }
 
 fn take_while_parser_fail<'a>(
@@ -284,11 +287,9 @@ fn collect_opt_pair0<'a>(
 ) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>> {
     alt((collect_opt_pair1(parser), success(vec![])))
 }
-fn collect_opt_pair1<'a, F>(
-    mut parser: F,
+fn collect_opt_pair1<'a>(
+    mut parser: impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>,
 ) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>,
 {
     move |input: &str| {
         let mut rst = vec![];
@@ -326,20 +327,16 @@ where
     }
 }
 
-fn take_while_parser_fail_or<'a, F, G, H>(
-    mut term_parser: F,
-    mut parser: G,
-    mut fail_parser: H,
+fn take_while_parser_fail_or<'a>(
+    mut term_parser: impl FnMut(&'a str) -> IResult<&'a str, bool>,
+    mut parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+    mut fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
 ) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, &'a str>,
-    G: FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
-    H: FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
 {
     move |input: &str| {
         let mut l = 0;
         for (i, c) in input.char_indices().by_ref() {
-            if let Ok((i, _v)) = term_parser(&input[l..]) {
+            if let Ok((i, true)) = term_parser(&input[l..]) {
                 return Ok((i, (fail_parser(&input[..l]).ok().map(|(_, v)| v), None)));
             } else if let Ok((r, v)) = parser(&input[l..]) {
                 return Ok((r, (fail_parser(&input[..l]).ok().map(|(_, v)| v), Some(v))));
@@ -370,11 +367,11 @@ fn take_while_parser_fail_or_peek_tag<'a>(
     parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
     fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
 ) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)> {
-    take_while_parser_fail_or(peek(tag(term_tag)), parser, fail_parser)
+    take_while_parser_fail_or(value(true, peek(tag(term_tag))), parser, fail_parser)
 }
 
 fn collect_while_parser_fail_or0<'a>(
-    term_parser: impl FnMut(&'a str) -> IResult<&'a str, &'a str>,
+    term_parser: impl FnMut(&'a str) -> IResult<&'a str, bool>,
     parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
     fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
 ) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole<'a>>> {
@@ -421,10 +418,10 @@ fn dont_format(input: &str) -> IResult<&str, ICreole> {
 }
 
 fn table_header_cell_inner(input: &str) -> IResult<&str, ICreole> {
-    map(take_lit_text_until0("|"), ICreole::TableHeaderCell)(input)
+    map(take_dlit_text_until_peek_char0('|'), ICreole::TableHeaderCell)(input)
 }
 fn table_cell_inner(input: &str) -> IResult<&str, ICreole> {
-    map(take_lit_text_until0("|"), ICreole::TableCell)(input)
+    map(take_dlit_text_until_peek_char0('|'), ICreole::TableCell)(input)
 }
 fn table_header_row(input: &str) -> IResult<&str, ICreole> {
     let (left, line) = preceded(
@@ -500,8 +497,8 @@ fn line(input: &str) -> IResult<&str, ICreole> {
     map(
         collect_while_parser_fail_or0(
             alt((
-                recognize(pair(char('\n'), peek(char('\n')))),
-                recognize(peek(preceded(char('\n'), creole_inner))),
+                value(true, pair(char('\n'), peek(char('\n')))),
+                value(true, peek(preceded(char('\n'), creole_inner))),
             )),
             lit,
             text,
@@ -912,7 +909,7 @@ mod tests {
             table(
                 "|=|=table|=header|
 |a|table|row|
-|b|table|row|
+|b|{{{ // don't format // }}}|{{{ ** me ** }}}|
 |c||empty|"
             ),
             Ok((
@@ -930,8 +927,8 @@ mod tests {
                     ]),
                     TableRow(vec![
                         TableCell(vec![Text("b")]),
-                        TableCell(vec![Text("table")]),
-                        TableCell(vec![Text("row")]),
+                        TableCell(vec![DontFormat(" // don't format // ")]),
+                        TableCell(vec![DontFormat(" ** me ** ")]),
                     ]),
                     TableRow(vec![
                         TableCell(vec![Text("c")]),
