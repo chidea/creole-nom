@@ -28,7 +28,7 @@ use {
             // multispace0, multispace1,
         },
         combinator::{
-            // consumed, // same, returns tuple (consumed input, parser output) as result
+            eof,
             map, // apply function to the result of parser
             // rest_len, // return length of all remaining input
             peek,
@@ -36,9 +36,9 @@ use {
             // cond, // take a bool and run parser when it's a true
             // all_consuming, // succeed when given parser remains no rest input
             recognize, // return consumed input by parser when its succeed
-            rest,      // return all remaining input
+            // consumed, // returns tuple (consumed input, parser output) as result
+            rest, // return all remaining input
             success,
-            // eof,
             // map_opt, // same, returns Option<_>
             // map_res, // same, returns Result<_>
             // map_parser, // parser after parser
@@ -533,7 +533,10 @@ fn line(input: &str) -> IResult<&str, ICreole> {
 }
 fn creole_inner(input: &str) -> IResult<&str, ICreole> {
     alt((
-        value(ICreole::HorizontalLine, tag("----")),
+        value(
+            ICreole::HorizontalLine,
+            terminated(tag("----"), alt((peek(tag("\n")), eof))),
+        ),
         heading,
         dont_format,
         table,
@@ -1023,6 +1026,10 @@ mod tests {
         use ICreole::*;
         assert_eq!(try_creoles(""), Ok(("", vec![Line(vec![])])));
         assert_eq!(try_creoles("----"), Ok(("", vec![HorizontalLine])));
+        assert_eq!(
+            try_creoles("-----"),
+            Ok(("", vec![Line(vec![Text("-----")])]))
+        );
         assert_eq!(creoles("----"), vec![HorizontalLine]);
         // assert_eq!(creoles("----a"), vec![Line(vec![Text("----a")])]);
         assert_eq!(
