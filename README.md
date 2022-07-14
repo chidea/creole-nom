@@ -18,7 +18,7 @@ WikiCreole markup language parser by nom
  - [x] nowiki (don't format)
 
 ### Strict 1.0 (from [test cases](http://www.wikicreole.org/wiki/Creole1.0TestCases))
- - [ ] ignore equal sign at end of heading
+ - [x] ignore equal sign at end of heading
  - [x] inline nowiki
  - [x] nowiki in table
  - [x] allow spaces at end of table row

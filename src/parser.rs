@@ -28,6 +28,7 @@ use {
             // multispace0, multispace1,
         },
         combinator::{
+            // consumed, // returns tuple (consumed input, parser output) as result
             eof,
             map, // apply function to the result of parser
             // rest_len, // return length of all remaining input
@@ -36,8 +37,7 @@ use {
             // cond, // take a bool and run parser when it's a true
             // all_consuming, // succeed when given parser remains no rest input
             recognize, // return consumed input by parser when its succeed
-            // consumed, // returns tuple (consumed input, parser output) as result
-            rest, // return all remaining input
+            rest,      // return all remaining input
             success,
             // map_opt, // same, returns Option<_>
             // map_res, // same, returns Result<_>
@@ -234,10 +234,8 @@ fn text(input: &str) -> IResult<&str, ICreole> {
         ICreole::Text(s)
     })(input)
 }
-fn take_lit_text_until0<'a>(
-    until_tag: &'static str,
-) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole>> {
-    collect_opt_pair0(take_while_parser_fail_or_peek_tag(until_tag, lit, text))
+fn take_dlit_text_until0<'a>() -> impl FnMut(&'a str) -> IResult<&'a str, Vec<ICreole>> {
+    collect_opt_pair0(take_while_parser_fail(dlit, text))
 }
 fn take_dlit_text_until_peek_char0<'a>(
     until_char: char,
@@ -375,13 +373,13 @@ fn take_while_parser_fail_or<'a>(
     }
 }
 
-fn take_while_parser_fail_or_peek_tag<'a>(
-    term_tag: &'static str,
-    parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
-    fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
-) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)> {
-    take_while_parser_fail_or(value(true, peek(tag(term_tag))), parser, fail_parser)
-}
+// fn take_while_parser_fail_or_peek_tag<'a>(
+//     term_tag: &'static str,
+//     parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+//     fail_parser: impl FnMut(&'a str) -> IResult<&'a str, ICreole<'a>>,
+// ) -> impl FnMut(&'a str) -> IResult<&'a str, (Option<ICreole<'a>>, Option<ICreole<'a>>)> {
+//     take_while_parser_fail_or(value(true, peek(tag(term_tag))), parser, fail_parser)
+// }
 
 fn collect_while_parser_fail_or0<'a>(
     term_parser: impl FnMut(&'a str) -> IResult<&'a str, bool>,
@@ -418,9 +416,26 @@ fn heading(input: &str) -> IResult<&str, ICreole> {
         separated_pair(
             map(many_m_n(1, 6, char('=')), |s| s.len()),
             char(' '),
-            take_lit_text_until0("\n"),
+            alt((take_until("\n"), rest)),
         ),
-        |(level, body)| ICreole::Heading(level as u8, body),
+        |(level, body): (usize, &str)| {
+            ICreole::Heading(
+                level as u8,
+                if let Ok((_, v)) = take_dlit_text_until0()({
+                    let body = body.trim_end();
+                    if body.ends_with(&input[..level]) {
+                        // ignore ending space and '='s same as its opening
+                        body[..body.len() - level].trim_end()
+                    } else {
+                        body
+                    }
+                }) {
+                    v
+                } else {
+                    vec![]
+                },
+            )
+        },
     )(input)
 }
 fn dont_format(input: &str) -> IResult<&str, ICreole> {
@@ -854,6 +869,11 @@ mod tests {
         use ICreole::*;
         assert_eq!(heading("= "), Ok(("", Heading(1, vec![]))));
         assert_eq!(heading("= a"), Ok(("", Heading(1, vec![Text("a")]))));
+        assert_eq!(heading("= a ="), Ok(("", Heading(1, vec![Text("a")]))));
+        assert_eq!(
+            heading("= {{{a}}} ="),
+            Ok(("", Heading(1, vec![DontFormat("a")])))
+        );
         assert_eq!(
             heading("= [[a]]"),
             Ok(("", Heading(1, vec![Link("a", "a")])))
