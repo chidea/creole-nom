@@ -22,7 +22,9 @@ companion project `chidea/wasm-creole-live-editor` appears only in test fixtures
         block parsers (heading|table|list|hrule|dont_format|…) tried before paragraph fallback
 creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swallowed!)
 ```
-
+        block parsers (heading|table|list|hrule|dont_format|…) tried before paragraph fallback
+        list() is line-level: deeper marker nests, blank line closes the run; paragraphs span
+        lines until a blank one (para_break); inline text scans ride the lexer DFA
 - Inline behavior (Batch B, 2026-11-08): emphasis crosses newlines (terminator sets reach
   `para_break` = blank line / inline delimiter / line end), heading closing `=`-run of any
   length, `tilde_escape` renders `~` escapes (space, `~`, markup opens, `|` `#` `=` `-`),
@@ -30,8 +32,8 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
   render names through `tilde_escape`.
 - `src/creole.rs` — AST only: `ICreole<'a>` enum holding `&'a str` slices (no allocation),
   derives `Debug, Clone, Serialize, Deserialize, PartialEq`, manual `impl Eq`.
-- `src/parser.rs` — all parsing + all inline tests: parsers :1-796 (public entry points at
-  the end), `mod tests` from :798 (1671 lines total).
+- `src/parser.rs` — all parsing + all inline tests: parsers :1-807 (public entry points at the
+  end: `try_creoles` :809, `creoles` :822), `mod tests` from :830 (1703 lines total).
 - `src/main.rs` — scratch nom demo (`tag("hello")`); does not use the crate. Not a CLI.
 - `src/lexer.rs` — `logos` tokenizer (`Tok`, `lex_vec`, `lex_count` from the lexer-vs-nom
   bench) plus `next_inline_stop`/`is_scan_stop`, which now **drive** the inline text
@@ -48,7 +50,10 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
 ## Key Directories
 
 - `src/` — 5 files, flat (`lib.rs`, `creole.rs`, `parser.rs`, `main.rs`, `lexer.rs`); no
-  `examples/`, no `benches/`, no `unsafe` (`[lints.rust] unsafe_code = "forbid"`).
+  `benches/`, no `unsafe` (`[lints.rust] unsafe_code = "forbid"`).
+- `examples/creole_test_input.rs` + `examples/CreoleTestInput.txt` — upstream WikiCreole 1.0
+  corpus smoke runner: `cargo run --release --example creole_test_input` must print
+  `37 blocks … 0 empty parses` and exit 0.
 - `tests/public_api.rs` — integration suite over the published surface only (see Testing & QA).
 - `.github/workflows/ci.yml` — CI: per-feature `cargo test` matrix, `cargo hack` powerset
   check, `cargo fmt --check` + `cargo clippy -- -D warnings`.
@@ -112,7 +117,7 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
   `unsafe_code = "forbid"` + clippy `all = "warn"`. Resolved: nom 8.0.0, log 0.4.25,
   serde 1.0.217, env_logger 0.11.6; on-disk `Cargo.lock` is v4 (Cargo ≥ 1.78).
 - `src/lib.rs` — module wiring + `prelude`; add new public surface here.
-- `src/parser.rs` — every parser, entry points `try_creoles`/`creoles` (:780/:789), inline tests.
+- `src/parser.rs` — every parser, entry points `try_creoles`/`creoles` (:809/:822), inline tests.
 - `src/creole.rs` — AST; a new markup node = variant here + parser fn + feature cfg if optional.
 - `.gitignore` ignores `Cargo.lock` (library convention); tree is a git checkout since
   2026-11-08 (`4dd0019` green baseline, `3c770f8` logos experiment, `cf559f7` cleanup).
@@ -131,8 +136,8 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
 
 ## Testing & QA
 
-- Inline `#[cfg(test)] mod tests` in `src/parser.rs:798-1671` (13 active `#[test]`s under
-  `--features extend`/`extended`, 12 without — `extend_tests` is `#[cfg(feature = "extend")]`;
+- Inline `#[cfg(test)] mod tests` in `src/parser.rs:830-1703` (15 active `#[test]`s under
+  `--features extend`/`extended`, 14 without — `extend_tests` is `#[cfg(feature = "extend")]`;
   list: `text_tests`, `text_style_tests`, `linebreak_tests`, `list_tests`, `parser_tests`,
   `heading_tests`, `link_tests`, `table_tests`, `image_tests`, `extend_tests`, `escape_tests`,
   `other_tests`, `mixed_tests`; one commented-out) plus 2 tests in `src/lexer.rs`
@@ -142,7 +147,7 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
   test a new parser fn.
 - `tests/public_api.rs` — 10 integration tests reaching only `creole_nom::prelude`
   (`creoles`/`try_creoles`/`ICreole`), mirroring the README support matrix incl. the
-  unclosed-emphasis-is-literal-text convention. New public-API regressions go here.
+  escape cases and the space-less-bold-list convention. New public-API regressions go here.
 - Test idiom — start with `init(); use ICreole::*;` (`init()` = `env_logger::Builder::from_env(
   Env::default().default_filter_or("debug")).is_test(true).try_init()`), then assert on full AST:
 

@@ -24,7 +24,7 @@ WikiCreole markup language parser by nom
  - [x] allow spaces at end of table row
  - [x] allow spaces at start of list row
  - [x] tilde escape
- - [ ] free link
+ - [x] free link
  - [x] italic link
  - [x] italic/bold extend across line
  - [ ] interwiki link

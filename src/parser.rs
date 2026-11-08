@@ -199,30 +199,54 @@ fn text_style(input: &str) -> IResult<&str, ICreole<'_>> {
 fn list_head_char(input: &str) -> IResult<&str, char> {
     one_of("*#").parse(input)
 }
-fn list(input: &str) -> IResult<&str, ICreole<'_>> {
-    let input = input.trim_start();
-    let (_, head) = list_head_char(input)?;
-    let (r, lines) = separated_list0(
+fn list_lines<'a>(
+    head: char,
+) -> impl Parser<&'a str, Output = Vec<&'a str>, Error = nom::error::Error<&'a str>> {
+    separated_list0(
         char('\n'),
         recognize(separated_pair(
             preceded(space0, preceded(char(head), many0(list_head_char))),
-            char(' '),
+            space0,
             alt((is_not("\n"), success(""))),
         )),
     )
-    .parse(input)?;
-
-    // debug!("list recognized : {:?}", lines);
-    if lines.is_empty() {
-        return Err(err_tag(input));
+}
+fn list(input: &str) -> IResult<&str, ICreole<'_>> {
+    let trimmed = input.trim_start();
+    let (_, head) = list_head_char(trimmed)?;
+    // a `*` run followed by another `*`, or a run >= 2 whose rest of the
+    // first line holds a `**` closer, is emphasis, not a deeper bullet:
+    // bail so the paragraph/text_style path claims the line
+    let (_, run) = recognize(pair(char(head), many0(list_head_char))).parse(trimmed)?;
+    if head == '*'
+        && (trimmed[run.len()..].starts_with('*')
+            || (run.len() >= 2 && trimmed[run.len()..].contains("**")))
+    {
+        return Err(err_tag(trimmed));
     }
-    Ok((r, _list(&input[..1])(lines)))
+    let (mut r, mut lines) = list_lines(head).parse(input)?;
+    if lines.is_empty() || lines.iter().any(|l| l.trim().is_empty()) {
+        return Err(err_tag(input)); // a blank line is never a list item
+    }
+    // the spec nests a blank-line separated block into the last item:
+    // absorb `\n\n` + the following list block, "" marks the child boundary
+    while r.starts_with("\n\n*") || r.starts_with("\n\n#") {
+        match list_lines(head).parse(&r[2..]) {
+            Ok((r2, more)) if !more.is_empty() && more.iter().all(|l| !l.trim().is_empty()) => {
+                lines.push("");
+                lines.extend(more);
+                r = r2;
+            }
+            _ => break,
+        }
+    }
+    Ok((r, _list(&trimmed[..1])(lines)))
 }
 
 /// `head_tag` is the bare marker run (`*`, `##`) without the trailing space,
 /// so membership needs no `format!("{} ")` allocation per recursion.
 fn starts_with_marker(line: &str, head_tag: &str) -> bool {
-    line.starts_with(head_tag) && line[head_tag.len()..].starts_with(' ')
+    line.starts_with(head_tag) && !line[head_tag.len()..].starts_with(['*', '#'])
 }
 
 fn _list<'a>(head_tag: &str) -> impl FnMut(Vec<&'a str>) -> ICreole<'a> {
@@ -235,11 +259,17 @@ fn _list<'a>(head_tag: &str) -> impl FnMut(Vec<&'a str>) -> ICreole<'a> {
                 continue;
             }
             let line = input[i].trim_start();
+            if line.is_empty() {
+                // "" is the child-boundary sentinel list() inserts for a
+                // blank-line separated continuation block, never an item
+                continue;
+            }
             // debug!("list line : {}", line);
             if starts_with_marker(line, head_tag) {
                 // sibling
+                let content = line[head_tag.len()..].trim_start();
                 let (_, v) = map(collect_while_parser_fail0(lit, text), ICreole::ListItem)
-                    .parse(&line[head_tag.len() + 1..])
+                    .parse(content)
                     // the collector always succeeds (empty content -> empty
                     // item); the or_else only exists to keep the match total
                     .unwrap_or_else(|_| (line, ICreole::ListItem(vec![])));
@@ -287,7 +317,14 @@ fn first_unescaped_pipe(s: &str) -> Option<usize> {
 }
 
 fn link(input: &str) -> IResult<&str, ICreole<'_>> {
-    let (left, content) = delimited(tag("[["), is_not("]\n"), tag("]]")).parse(input)?;
+    // `[[[x]]]` carries no Creole meaning: rejecting a `[`-prefixed href
+    // lets the leading bracket fall through as text and `[[x]]` parse.
+    let (left, content) = delimited(
+        tag("[["),
+        verify(is_not("]\n"), |s: &str| !s.starts_with('[')),
+        tag("]]"),
+    )
+    .parse(input)?;
     // `~|` inside a link is an escaped pipe: only an unescaped pipe splits
     // href from name, so `[[A pipe ~| within links]]` is one free link
     let (href, name) = match first_unescaped_pipe(content) {
@@ -380,7 +417,12 @@ fn take_while_parser_fail<'a, E: ParseError<&'a str>>(
         // token-boundary argument (lexer::next_inline_stop).
         let mut off = 0usize;
         while let Some(t) = lexer::next_inline_stop(input, off) {
-            if let Ok((r, v)) = parser.parse(&input[t..]) {
+            if input[t..].starts_with("[[[") {
+                // `[[[` has no Creole meaning: skip the run so the inner
+                // `[[` never parses as a link
+                off = t + 2;
+                continue;
+            } else if let Ok((r, v)) = parser.parse(&input[t..]) {
                 let prefix = if t > 0 {
                     fail_parser.parse(&input[..t]).ok().map(|(_, v)| v)
                 } else {
@@ -457,6 +499,11 @@ fn take_while_parser_fail_or<'a, E: ParseError<&'a str>>(
                     i,
                     (fail_parser.parse(&input[..t]).ok().map(|(_, v)| v), None),
                 ));
+            } else if input[t..].starts_with("[[[") {
+                // `[[[` has no Creole meaning; skip the run (see
+                // take_while_parser_fail)
+                off = t + 2;
+                continue;
             } else if let Ok((r, v)) = parser.parse(&input[t..]) {
                 return Ok((
                     r,
@@ -545,7 +592,7 @@ fn heading(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         separated_pair(
             map(many_m_n(1, 6, char('=')), |s| s.len()),
-            char(' '),
+            space0,
             alt((take_until("\n"), rest)),
         ),
         |(level, body): (usize, &str)| {
@@ -718,24 +765,6 @@ fn fold(input: &str) -> IResult<&str, ICreole<'_>> {
 // }
 
 fn parse_paragraph(input: &str) -> IResult<&str, ICreole<'_>> {
-    // let mut rst = vec![];
-    // // let mut acc = String::new();
-    // let mut len = 0;
-    // let mut remainder = input;
-    // // let mut (a, b) = (0, 0);
-    // while !remainder.is_empty() {
-    //     if let Ok((r, v)) = alt((dont_format, link, image, text_style)).parse(remainder) {
-    //         if 0 < len {
-    //             rst.push(ICreole::Text(&remainder[..len]));
-    //             len = 0;
-    //         }
-    //         rst.push(v);
-    //         remainder = r;
-    //     } else {
-    //         len += 1;
-    //     }
-    // }
-    // Ok((remainder, ICreole::Paragraph(rst)))
     map(
         // many1(alt((dont_format, link, image, text_style))),
         collect_while_parser_fail_or0(
@@ -778,12 +807,7 @@ fn parse_creole_inner(input: &str) -> IResult<&str, ICreole<'_>> {
 // }
 
 pub fn try_creoles(input: &str) -> IResult<&str, Vec<ICreole<'_>>> {
-    separated_list0(char('\n'), alt((parse_creole_inner, parse_paragraph)))
-        // many0(terminated(
-        //     alt((parse_creole_inner, parse_paragraph)),
-        //     opt(line_ending),
-        // ))
-        .parse(input)
+    separated_list0(char('\n'), alt((parse_creole_inner, parse_paragraph))).parse(input)
 }
 
 pub fn creoles(input: &str) -> Vec<ICreole<'_>> {
@@ -853,8 +877,16 @@ mod tests {
             ))
         );
         assert_eq!(
+            // `**` at line start is the bullet-list marker (spec precedence):
+            // unclosed emphasis no longer falls back to plain paragraph text
             try_creoles("**bold,\nnot closed."),
-            Ok(("", vec![Paragraph(vec![Text("**bold,\nnot closed.")])]))
+            Ok((
+                "",
+                vec![
+                    BulletList(vec![BulletList(vec![ListItem(vec![Text("bold,")])])]),
+                    Paragraph(vec![Text("not closed.")])
+                ]
+            ))
         );
         assert_eq!(
             try_creoles("//italic,\nnot closed."),

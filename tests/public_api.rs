@@ -44,10 +44,13 @@ fn text_styles() {
             Text("c"),
         ])])]
     );
-    // unclosed emphasis is literal text, not a parse error
+    // space-less `**` is a bold list (spec), not unclosed emphasis
     assert_eq!(
         creoles("**bold,\nnot closed."),
-        vec![Paragraph(vec![Text("**bold,\nnot closed.")])]
+        vec![
+            BulletList(vec![BulletList(vec![ListItem(vec![Text("bold,")])])]),
+            Paragraph(vec![Text("not closed.")]),
+        ]
     );
 }
 
