@@ -6,11 +6,12 @@
 wiki markup into a zero-copy AST using **nom 8**. Only three items form the public API:
 `creoles`, `try_creoles`, `ICreole` (re-exported via `creole_nom::prelude`).
 The README is a checkbox support matrix against the
-[WikiCreole 1.0 Test Cases](http://www.wikicreole.org/wiki/Creole1.0TestCases) — no install,
-usage, or contributor examples exist anywhere (zero code blocks); the only usage examples in
-the tree are test assertions. Still unchecked: free link, interwiki link, link-in-image-
+[WikiCreole 1.0 Test Cases](http://www.wikicreole.org/wiki/Creole1.0TestCases) — the README
+has no code blocks; usage is documented in the crate-level docs (`src/lib.rs`, 2 doctests,
+green under default and `extended`). Still unchecked: free link, interwiki link, link-in-image-
 title, image-in-link-title, text colors (tilde escape + across-line emphasis landed 2026-11-08).
-section is not mapped to Cargo features ("text colors" unchecked, yet `font-color` exists);
+The "Extended" section is not mapped to Cargo features ("text colors" unchecked, yet
+`font-color` exists);
 companion project `chidea/wasm-creole-live-editor` appears only in test fixtures
 (`src/parser/tests.rs:404`).
 
@@ -76,6 +77,8 @@ cargo check                      # passes for every feature set, default include
 cargo test --features extended   # what the author runs: 13 passed + 2 ignored (profiles)
 cargo test --features extended -- --nocapture
 cargo test --features extended --test public_api   # public-surface suite only
+cargo test --doc                                   # crate-doc doctests (2; both feature sets)
+cargo doc --no-deps                                # must stay warning-free (intra-doc links)
 cargo fmt --all && cargo clippy --all-targets --features extended   # both CI-enforced clean
 cargo hack --feature-powerset --depth 2 check      # full feature matrix (needs cargo-hack)
 ```

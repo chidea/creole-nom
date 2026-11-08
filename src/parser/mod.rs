@@ -1,3 +1,7 @@
+//! The public parse API. Submodules split by concern; their items are
+//! `pub(crate)`-glob-re-exported here, and the crate's two entry points are
+//! defined at the bottom of this file.
+
 mod block;
 mod combinators;
 mod inline;
@@ -26,10 +30,14 @@ use {
     },
 };
 
+/// Parse a whole document: one node per `\n`-separated block (blank lines
+/// become empty `Paragraph`s); block parsers are tried before the paragraph
+/// fallback.
 pub fn try_creoles(input: &str) -> IResult<&str, Vec<ICreole<'_>>> {
     separated_list0(char('\n'), alt((parse_creole_inner, parse_paragraph))).parse(input)
 }
 
+/// Infallible [`try_creoles`]: nodes on success, an empty `Vec` on any error.
 pub fn creoles(input: &str) -> Vec<ICreole<'_>> {
     if let Ok((_, v)) = try_creoles(input) {
         v

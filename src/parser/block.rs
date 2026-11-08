@@ -1,3 +1,7 @@
+//! Block-level parsers: constructs anchored at line starts (headings, lists,
+//! tables, `{{{…}}}`, `---`), plus the paragraph fallback and the per-line
+//! dispatchers used by `try_creoles`.
+
 use super::*;
 #[cfg(any(feature = "extend", feature = "fold", feature = "link-button"))]
 #[cfg(debug_assertions)]
@@ -30,6 +34,8 @@ pub(crate) fn list_lines<'a>(
         )),
     )
 }
+/// One list run: consecutive `*`/`#` lines → `BulletList`/`NumberedList`,
+/// nesting by marker depth (a deeper marker nests, a shallower closes).
 pub(crate) fn list(input: &str) -> IResult<&str, ICreole<'_>> {
     let trimmed = input.trim_start();
     let (_, head) = list_head_char(trimmed)?;
@@ -111,6 +117,8 @@ pub(crate) fn _list<'a>(head_tag: &str) -> impl FnMut(Vec<&'a str>) -> ICreole<'
     }
 }
 
+/// `= text =` → `Heading(level, inline)`; level is the leading `=` run (1-6),
+/// the trailing run is optional and may differ in length.
 pub(crate) fn heading(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         separated_pair(
@@ -133,6 +141,7 @@ pub(crate) fn heading(input: &str) -> IResult<&str, ICreole<'_>> {
     )
     .parse(input)
 }
+/// `{{{raw}}}` preformatted block → `DontFormat` with the verbatim slice.
 pub(crate) fn dont_format(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         delimited(tag("{{{"), take_until("}}}"), tag("}}}")),
@@ -199,6 +208,8 @@ pub(crate) fn table_cell_row(input: &str) -> IResult<&str, ICreole<'_>> {
         .collect();
     Ok((left, ICreole::TableRow(rst)))
 }
+/// Consecutive `|`/`|=` lines → `Table` of `TableHeaderRow`/`TableRow`
+/// (header row wins the run even mid-table; `||` separates cells).
 pub(crate) fn table(input: &str) -> IResult<&str, ICreole<'_>> {
     let mut rst = vec![];
     // debug!("table input : {}", input);
@@ -219,6 +230,8 @@ pub(crate) fn table(input: &str) -> IResult<&str, ICreole<'_>> {
     Ok((rest, ICreole::Table([rst, body].concat())))
 }
 
+/// Fallback block: consecutive plain lines collected as one inline-run
+/// `Paragraph` (stops at a blank or block-anchored line).
 pub(crate) fn parse_paragraph(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         // many1(alt((dont_format, link, image, text_style))),

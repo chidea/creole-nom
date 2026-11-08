@@ -1,3 +1,8 @@
+//! Shared parsing primitives: uniform error constructors, the `lit`/`dlit`
+//! text collectors (dont_format-aware, fast-forwarded by
+//! `lexer::next_inline_stop`), list/table line helpers, and the combinator
+//! factories composed by `inline` and `block`.
+
 use super::*;
 use crate::lexer;
 #[cfg(any(feature = "extend", feature = "fold", feature = "link-button"))]

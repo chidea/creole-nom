@@ -1,3 +1,7 @@
+//! Inline-level parsers: constructs that may appear inside a paragraph, heading
+//! or table cell. All `pub(crate)`, reached through the glob re-export in
+//! `src/parser/mod.rs` by the sibling modules and the test suite.
+
 use super::*;
 #[cfg(any(feature = "extend", feature = "fold", feature = "link-button"))]
 #[cfg(debug_assertions)]
@@ -52,6 +56,7 @@ pub(crate) fn tilde_escape(input: &str) -> IResult<&str, ICreole<'_>> {
     .parse(input)
 }
 
+/// `**strong**` → `Bold`, inline content up to a closing `**` run.
 pub(crate) fn bold(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         delimited(
@@ -73,6 +78,7 @@ pub(crate) fn bold(input: &str) -> IResult<&str, ICreole<'_>> {
     )
     .parse(input)
 }
+/// `//emphasis//` → `Italic`, inline content up to a closing `//` run.
 pub(crate) fn italic(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         delimited(
@@ -95,6 +101,7 @@ pub(crate) fn italic(input: &str) -> IResult<&str, ICreole<'_>> {
     .parse(input)
 }
 
+/// Inline style dispatch: `bold` then `italic`.
 pub(crate) fn text_style(input: &str) -> IResult<&str, ICreole<'_>> {
     alt((
         value(ICreole::ForceLinebreak, tag("\\\\")),
@@ -106,6 +113,7 @@ pub(crate) fn text_style(input: &str) -> IResult<&str, ICreole<'_>> {
     .parse(input)
 }
 
+/// `[[href]]` or `[[href|label]]` → `Link` with inline-parsed label.
 pub(crate) fn link(input: &str) -> IResult<&str, ICreole<'_>> {
     // `[[[x]]]` carries no Creole meaning: rejecting a `[`-prefixed href
     // lets the leading bracket fall through as text and `[[x]]` parse.
@@ -133,6 +141,8 @@ pub(crate) fn link(input: &str) -> IResult<&str, ICreole<'_>> {
     let (_, v) = many0(alt((tilde_escape, map(is_not("<~"), ICreole::Text)))).parse(name)?;
     Ok((left, ICreole::Link(href, v)))
 }
+/// `{{href|alt}}` → `Image(href, alt)`; the title is kept verbatim (Creole
+/// forbids markup inside image titles).
 pub(crate) fn image(input: &str) -> IResult<&str, ICreole<'_>> {
     let (left, content) = delimited(tag("{{"), is_not("{}\n"), tag("}}")).parse(input)?;
     // same tilde rule as `link`: `~|` does not separate src from label
@@ -143,6 +153,7 @@ pub(crate) fn image(input: &str) -> IResult<&str, ICreole<'_>> {
     Ok((left, ICreole::Image(src, label)))
 }
 
+/// `<<Name(text)>>` extension macro → `Extend(name, text)`. `extend`.
 #[cfg(feature = "extend")]
 pub(crate) fn extend(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
@@ -174,6 +185,7 @@ pub(crate) fn text(input: &str) -> IResult<&str, ICreole<'_>> {
     })
     .parse(input)
 }
+/// `[{href|label}]` button link → `LinkButton(href, inline label nodes)`. `link-button`.
 #[cfg(feature = "link-button")]
 pub(crate) fn link_button(input: &str) -> IResult<&str, ICreole<'_>> {
     let (left, (href, name)) = delimited(
@@ -216,6 +228,7 @@ pub(crate) fn link_button(input: &str) -> IResult<&str, ICreole<'_>> {
 //     .parse(input)
 // }
 
+/// `>><content>>` foldable region → `Fold(content)`. `fold`.
 #[cfg(feature = "fold")]
 pub(crate) fn fold(input: &str) -> IResult<&str, ICreole<'_>> {
     // map(map_parser(tag("---<"), take_until("----"), |rest| ICreole::Fold(rest))(input)
