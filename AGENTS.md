@@ -12,7 +12,7 @@ the tree are test assertions. Still unchecked: free link, interwiki link, link-i
 title, image-in-link-title, text colors (tilde escape + across-line emphasis landed 2026-11-08).
 section is not mapped to Cargo features ("text colors" unchecked, yet `font-color` exists);
 companion project `chidea/wasm-creole-live-editor` appears only in test fixtures
-(`src/parser.rs:1194`).
+(`src/parser/tests.rs:404`).
 
 ## Architecture & Data Flow
 
@@ -22,9 +22,10 @@ companion project `chidea/wasm-creole-live-editor` appears only in test fixtures
         block parsers (heading|table|list|hrule|dont_format|…) tried before paragraph fallback
 creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swallowed!)
 ```
-        block parsers (heading|table|list|hrule|dont_format|…) tried before paragraph fallback
-        list() is line-level: deeper marker nests, blank line closes the run; paragraphs span
-        lines until a blank one (para_break); inline text scans ride the lexer DFA
+- `src/parser/mod.rs` wires the submodules; the content lines above apply to
+  `parse_creole_inner`/`parse_paragraph` in `src/parser/block.rs`:
+  list() is line-level: deeper marker nests, blank line closes the run; paragraphs span
+  lines until a blank one (`para_break` in `combinators.rs`); inline scans ride the lexer DFA.
 - Inline behavior (Batch B, 2026-11-08): emphasis crosses newlines (terminator sets reach
   `para_break` = blank line / inline delimiter / line end), heading closing `=`-run of any
   length, `tilde_escape` renders `~` escapes (space, `~`, markup opens, `|` `#` `=` `-`),
@@ -36,8 +37,15 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
   `Text("|")` markers are NEVER glued to neighbours.
 - `src/creole.rs` — AST only: `ICreole<'a>` enum holding `&'a str` slices (no allocation),
   derives `Debug, Clone, Serialize, Deserialize, PartialEq`, manual `impl Eq`.
-- `src/parser.rs` — all parsing + all inline tests: parsers :1-844 (public entry points at the
-  end: `try_creoles` :833, `creoles` :837), `mod tests` from :846 (1760 lines total).
+- `src/parser/` — parsing split by concern (2026-11-08, was one `parser.rs`):
+  `mod.rs` (submodule wiring + public entry points `try_creoles` :29, `creoles` :33),
+  `inline.rs` (`tilde_escape` :28, `bold` :55, `link` :109, `image` :136, `extend` :147,
+  `text` :171, `link_button` :178, `fold` :220), `block.rs` (`list_lines` :21, `list` :33,
+  `heading` :114, `dont_format` :136, `table` :202, `parse_creole_inner` :241,
+  `parse_paragraph`), `combinators.rs` (`err_tag` :23, `err_eof` :27, `para_break` :35,
+  `starts_with_marker` :48, `lit`/`dlit` :70/:73, `take_dlit_text_until_peek_char0` :79,
+  `merge_text` :137, collectors), `tests.rs` (`mod tests`, 913 lines). Cross-module items
+  are `pub(crate)`; the submodules re-export nothing publicly.
 - `src/lexer.rs` — `logos` tokenizer (`Tok`, `lex_vec`, `lex_count` from the lexer-vs-nom
   bench) plus `next_inline_stop`/`is_scan_stop`, which now **drive** the inline text
   collectors in `parser.rs` (DFA jump between markup candidates; `lit`/`dlit` semantics
@@ -52,7 +60,7 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
 
 ## Key Directories
 
-- `src/` — 4 files, flat (`lib.rs`, `creole.rs`, `parser.rs`, `lexer.rs`); no
+- `src/` — `lib.rs`, `creole.rs`, `lexer.rs`, `parser/` (5 files, see above); no
   `benches/`, no `unsafe` (`[lints.rust] unsafe_code = "forbid"`).
 - `examples/creole_test_input.rs` + `examples/CreoleTestInput.txt` — upstream WikiCreole 1.0
   corpus smoke runner: `cargo run --release --example creole_test_input` must print
@@ -75,9 +83,10 @@ cargo hack --feature-powerset --depth 2 check      # full feature matrix (needs 
 **Baseline repaired 2026-11-08** (before: no feature set built without `extend`, and
 `cargo test` never compiled anywhere):
 
-- `src/parser.rs:259-262` — `extend` now cfg-paired inside `link`, mirroring the house
-  pattern in `link_button` (:502-505); `take_dlit_text_until_peek_char0` (:326-331) gained
-  the missing `not(extend) + link-button` arm that caused the `E0061`.
+- `src/parser/inline.rs:125-156` — `extend` cfg-paired inside `link`, mirroring the house
+  pattern in `link_button` (:188-191); `take_dlit_text_until_peek_char0`
+  (`src/parser/combinators.rs:79`) gained the missing `not(extend) + link-button` arm that
+  caused the `E0061`.
 - The 14 stale `Link(href, text: &str)` test assertions now use the AST shape
   `Link(href, vec![…])`.
 - `extend_tests` is gated `#[cfg(feature = "extend")]`; `other_tests`' empty-input assert
@@ -96,7 +105,7 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
   `collect_while_parser_fail0`, `take_dlit_text_until0`. They scan char boundaries, accumulate
   skipped prefix as `ICreole::Text` — this is how mixed inline content (`**a**b`) is built.
 - Error handling: pure nom `Err`, zero `unwrap`/`panic` outside tests; construct through the
-  helpers `err_tag` (`src/parser.rs:91`) / `err_eof` (`:95`), generic over
+  helpers `err_tag` (`src/parser/combinators.rs:23`) / `err_eof` (`:27`), generic over
   `E: ParseError<&'a str>`; only `Tag`/`Eof` kinds.
 - `#[cfg(feature = "…")]` is applied both to whole fns and *inside* `alt((…))` tuples,
   always paired with `#[cfg(not(feature = "…"))]` / `all(...)` arms so **every feature
@@ -110,7 +119,8 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
 - Logging: `#[cfg(debug_assertions)]`-gated `log` import; all `debug!` call sites are
   currently commented out.
 - The tree keeps large commented-out blocks as a menu of tried alternatives (e.g. the
-  disabled `Color` parser, `src/parser.rs:526-531`) — read them, they document abandoned designs.
+  disabled `font_color` parser, `src/parser/inline.rs:201-216`) — read them, they document
+  abandoned designs.
 
 ## Important Files
 
@@ -120,7 +130,7 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
   `unsafe_code = "forbid"` + clippy `all = "warn"`. Resolved: nom 8.0.0, log 0.4.25,
   serde 1.0.217, env_logger 0.11.6; on-disk `Cargo.lock` is v4 (Cargo ≥ 1.78).
 - `src/lib.rs` — module wiring + `prelude`; add new public surface here.
-- `src/parser.rs` — every parser, entry points `try_creoles`/`creoles` (:809/:822), inline tests.
+- `src/parser/mod.rs` — submodule wiring; entry points `try_creoles`/`creoles` (:29/:33).
 - `src/creole.rs` — AST; a new markup node = variant here + parser fn + feature cfg if optional.
 - `.gitignore` ignores `Cargo.lock` (library convention); tree is a git checkout since
   2026-11-08 (`4dd0019` green baseline → lexer + Batch A/B/C same day, tip `a89d087`).
@@ -139,15 +149,16 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
 
 ## Testing & QA
 
-- Inline `#[cfg(test)] mod tests` in `src/parser.rs:830-1703` (15 active `#[test]`s under
-  `--features extend`/`extended`, 14 without — `extend_tests` is `#[cfg(feature = "extend")]`;
-  list: `text_tests`, `text_style_tests`, `linebreak_tests`, `list_tests`, `parser_tests`,
-  `heading_tests`, `link_tests`, `table_tests`, `image_tests`, `extend_tests`, `escape_tests`,
-  `other_tests`, `mixed_tests`; one commented-out) plus 2 tests in `src/lexer.rs`
+- `#[cfg(test)] mod tests` in `src/parser/tests.rs` (module-level, no indent; 15 active
+  `#[test]`s, 16 under `--features extend`/`extended` — `extend_tests` (:711) is
+  `#[cfg(feature = "extend")]`; list: `text_tests`, `text_style_tests`, `linebreak_tests`,
+  `list_tests`, `parser_tests`, `heading_tests`, `link_tests`, `table_tests`, `image_tests`,
+  `extend_tests`, `escape_tests`, `other_tests`, `mixed_tests`; one commented-out) plus 2
+  tests in `src/lexer.rs`
   (`lexer_smoke`, `inline_stops` — the latter pins jump-candidate semantics).
-  Tests reach **private** combinators (`link`,
-  `heading`, `lit`, `take_while_parser_fail`) via `use super::*;` — no `pub` needed to
-  test a new parser fn.
+  Tests reach the `pub(crate)` parsers (`link`,
+  `heading`, `lit`, `take_while_parser_fail`) via `use super::*;` + the
+  `pub(crate) use …::*;` glob in `src/parser/mod.rs` — no `pub` needed to test a parser fn.
 - `tests/public_api.rs` — 10 integration tests reaching only `creole_nom::prelude`
   (`creoles`/`try_creoles`/`ICreole`), mirroring the README support matrix incl. the
   escape cases and the space-less-bold-list convention. New public-API regressions go here.
@@ -161,15 +172,15 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
       use ICreole::*;
       assert_eq!(creoles("ab1"), vec![Paragraph(vec![Text("ab1")])]);
   }
-  // verbatim, src/parser.rs:772-776
+  // verbatim, src/parser/tests.rs:12-16
   ```
 
 - Assertion shapes: `Ok(("", vec![…]))` / `Ok(("", ICreole…))` from `try_creoles` or direct
   combinator calls (remainder asserted as `""`), bare `vec![…]` from `creoles`. Suites are
-  batched per concept (`list_tests` spans src/parser.rs:851-1033, ~13 `assert_eq!`s);
+  batched per concept (`list_tests` spans src/parser/tests.rs:137-319, ~13 `assert_eq!`s);
   fixtures are inline literals incl. multi-line and CJK/emoji — keep Unicode paths covered.
   Run one concept: `cargo test --features extended linebreak -- --nocapture`.
-- `parser::tests::time_profile` (kept in `src/parser.rs`, `#[ignore]`d — normal suite stays
+- `parser::tests::time_profile` (`src/parser/tests.rs:843`, `#[ignore]`d — normal suite stays
   fast): calls every test fn 20k× with per-iteration timing. Invoke
   `cargo test --features extended -- --ignored --nocapture time_profile` (add `--release`
   for release numbers — add `--exact` to run one profile fn alone); last run captured to
