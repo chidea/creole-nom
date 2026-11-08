@@ -1,0 +1,28 @@
+[package]
+name = "creole-nom"
+version = "1.0.9"
+authors = ["chidea"]
+edition = "2021"
+license = "MIT"
+description = "WikiCreole markup language parser library by nom"
+repository = "https://github.com/chidea/creole-nom"
+readme = "README.md"
+keywords = ["wiki", "markdown", "parser", "creole", "nom"]
+categories = ["parser-implementations"]
+exclude = [ "*.sh", "*.ps1" ]
+
+[features]
+extended = ["link-button", "font-color", "fold", "extend"]
+extend = []
+icon = []
+link-button = []
+font-color = []
+fold = []
+
+[dependencies]
+nom = "8"
+log = "0"
+serde = {version="1", features=["derive"]}
+
+[dev-dependencies]
+env_logger = "0"

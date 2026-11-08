@@ -1,0 +1,1 @@
+clear && cargo test -- --nocapture
