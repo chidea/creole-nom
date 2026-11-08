@@ -5,7 +5,7 @@
 //!
 //! Marker runs (`=+`, `#+`, `\*+`, `/+`) are lexed without line context; a
 //! real pipeline would disambiguate heading/list markers by line position.
-//! Inline markup opens (`[[`, `{{`, `[{`, `<<`, `\\`, `**`, `//`) are token
+//! Inline markup opens (`[[`, `{{`, `[{`, `<<`, `\\`, `**`, `//`, `~`) are token
 //! starts, which is what `next_inline_stop` uses to fast-forward inline text
 //! scans (wired into `parser`'s text collectors).
 //! Characters the stream cannot match (stray `[`, single `\`, ...) surface as
@@ -48,7 +48,7 @@ pub enum Tok<'a> {
     SlashRun(&'a str),
     #[token("\n")]
     Newline,
-    #[regex(r"[^\[\]\{\}\|\*\\\/\=#<>\n]+", |lex| lex.slice())]
+    #[regex(r"[^\[\]\{\}\|\*\\\/\=#<>\n~]+", |lex| lex.slice())]
     Text(&'a str),
 }
 
@@ -81,8 +81,8 @@ pub fn lex_count(input: &str) -> usize {
 ///
 /// The text collectors used to re-attempt their parser at every char
 /// boundary. `Tok::Text` is the only token whose first character can open
-/// nothing (its regex excludes `[ ] { } | * \ / = #` and `\n`; `~` is plain
-/// text and opens no live parser), so every non-`Text` token start —
+/// nothing (its regex excludes `[ ] { } | * \ / = # ~` and `\n`; `~` opens
+/// the tilde escape), so every non-`Text` token start —
 /// including error slices — is a superset of the positions where the inline
 /// parsers, block parsers (`=`, `#`, `*` line heads) and terminators
 /// (`**`, `//`, `|`, `\n`) can ever match; prose in particular is skipped
@@ -157,5 +157,6 @@ mod tests {
         assert_eq!(next_inline_stop("a[{x}]b", 0), Some(1));
         assert_eq!(next_inline_stop("a<<x>>b", 0), Some(1));
         assert_eq!(next_inline_stop("a\\\\b", 0), Some(1));
+        assert_eq!(next_inline_stop("a~**b", 0), Some(1));
     }
 }

@@ -97,53 +97,64 @@ fn err_eof<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::Err<E> {
     nom::Err::Error(E::from_error_kind(input, ErrorKind::Eof))
 }
 
-// fn parse_tilde_escape<'a, E>(input: &'a str) -> IResult<&'a str, char, E>
-// where
-//     E: ParseError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
-// {
-//     /*
-//     from : http://www.wikicreole.org/wiki/EscapeCharacterProposal
-//     Here's a complete list that would cause the escape character (e.g. tilde) to trigger escaping of the following character combinations. This can be extended as need be. Note also that an escape character can be escaped by putting a space after it, since a space cannot be escaped.
+/// Tilde escape, WikiCreole escape-character proposal
+/// (http://www.wikicreole.org/wiki/EscapeCharacterProposal, spec §2.20):
+/// `~` before markup yields that markup verbatim as text - `~**` -> `**`,
+/// `~//` -> `//`, `~[[` `~]]` `~{{` `~}}` `~\\` `~----`, and for line-head
+/// markup `~-` `~#` `~=` `~|` (escaping mid-line is harmless). `~~` and
+/// `~<space>` escape the escape character itself -> a literal `~`. The
+/// result borrows the escaped characters; no allocation.
+fn tilde_escape(input: &str) -> IResult<&str, ICreole<'_>> {
+    map(
+        preceded(
+            char('~'),
+            alt((
+                recognize(alt((char(' '), char('~')))),
+                recognize(alt((
+                    tag("**"),
+                    tag("//"),
+                    tag("[["),
+                    tag("]]"),
+                    tag("{{"),
+                    tag("}}"),
+                    tag("\\\\"),
+                    tag("----"),
+                    tag("-"),
+                    tag("#"),
+                    tag("="),
+                    tag("|"),
+                ))),
+            )),
+        ),
+        ICreole::Text,
+    )
+    .parse(input)
+}
 
-//     Escapes Markup      Combination Constraint              Example:
-//     ==============      ==========================          =========
-//     Bold                Anywhere                            ~**
-//     Italics             Anywhere                            ~//
-//     Unordered Lists     Hyphen, first chars in line         ~-
-//     Ordered Lists       First chars in line                 ~#
-//     Headings            Equal signs, first chars in line    ~=
-//     Links Open          Anywhere                            ~[[
-//     Inside Links        Within Links                        [[A pipe ~| is used within links]]
-//     Links Close         Anywhere                            ~]]
-//     Line Breaks         Anywhere                            ~\\
-//     Horizontal Line     First chars in line                 ~----
-//     Image Open          Anywhere                            ~{{
-//     Image Close         Anywhere                            ~}}
-//     Table Open          First chars in line                 ~| this is | not a table
-//     Inside Tables       Pipe used within a table cell       | x~|y |
-//     Escaping Escape     Anywhere                            ~~
-//     Escaping Escape     Anywhere                            ~<space>
-//     Nowiki Open         First chars in line                 ~{{{
-//     Nowiki Close        First chars in line                 ~}}}
-//         */
-//     preceded(char('~'), alt(())).parse(input)
-// }
+/// Paragraph boundary that emphasis may not reach across: a blank line or a
+/// block parser starting on the next line - the same terminators
+/// `parse_paragraph` uses, so an unclosed `**` cannot eat past its own
+/// paragraph into a later closer.
+fn para_break<'a>() -> impl Parser<&'a str, Output = bool, Error = nom::error::Error<&'a str>> {
+    alt((
+        value(true, peek(pair(char('\n'), char('\n')))),
+        value(true, peek(preceded(char('\n'), parse_creole_inner))),
+    ))
+}
 
 fn bold(input: &str) -> IResult<&str, ICreole<'_>> {
     map(
         delimited(
             tag("**"),
-            // map(
-            //     alt((
-            //         take_until("**"),
-            //         recognize(many_till(anychar, alt((tag("\n"), tag("**"), eof)))),
-            //     )),
-            //     |s| vec![ICreole::Text(s)],
-            // ),
-            // map(recognize(many_till(peek(alt((tag("\n"), tag("**"), eof))))), |s| vec![ICreole::Text(s)])
             collect_while_parser_fail_or0(
-                alt((value(true, peek(tag("**"))), value(true, peek(char('\n'))))),
-                italic,
+                alt((value(true, peek(tag("**"))), para_break())),
+                alt((
+                    tilde_escape,
+                    italic,
+                    link,
+                    image,
+                    value(ICreole::ForceLinebreak, tag("\\\\")),
+                )),
                 text,
             ),
             tag("**"),
@@ -157,8 +168,14 @@ fn italic(input: &str) -> IResult<&str, ICreole<'_>> {
         delimited(
             tag("//"),
             collect_while_parser_fail_or0(
-                alt((value(true, peek(tag("//"))), value(true, peek(char('\n'))))),
-                alt((bold, link)),
+                alt((value(true, peek(tag("//"))), para_break())),
+                alt((
+                    tilde_escape,
+                    bold,
+                    link,
+                    image,
+                    value(ICreole::ForceLinebreak, tag("\\\\")),
+                )),
                 text,
             ),
             tag("//"),
@@ -199,16 +216,17 @@ fn list(input: &str) -> IResult<&str, ICreole<'_>> {
     if lines.is_empty() {
         return Err(err_tag(input));
     }
-    let v = _list(&input[..1])(lines)?;
-
-    Ok((r, v))
+    Ok((r, _list(&input[..1])(lines)))
 }
 
-fn _list<'a>(
-    head_tag: &'a str,
-) -> impl FnMut(Vec<&'a str>) -> Result<ICreole<'a>, nom::Err<nom::error::Error<&'a str>>> {
+/// `head_tag` is the bare marker run (`*`, `##`) without the trailing space,
+/// so membership needs no `format!("{} ")` allocation per recursion.
+fn starts_with_marker(line: &str, head_tag: &str) -> bool {
+    line.starts_with(head_tag) && line[head_tag.len()..].starts_with(' ')
+}
+
+fn _list<'a>(head_tag: &str) -> impl FnMut(Vec<&'a str>) -> ICreole<'a> {
     move |input: Vec<&str>| {
-        let head_space = format!("{} ", head_tag);
         let mut rst = vec![];
         let mut to_skip = 0;
         for i in 0..input.len() {
@@ -218,16 +236,17 @@ fn _list<'a>(
             }
             let line = input[i].trim_start();
             // debug!("list line : {}", line);
-            if line.starts_with(&head_space) {
+            if starts_with_marker(line, head_tag) {
                 // sibling
-                if let Ok((_, v)) = map(collect_while_parser_fail0(lit, text), ICreole::ListItem)
-                    .parse(&line[head_space.len()..])
-                {
-                    rst.push(v);
-                }
+                let (_, v) = map(collect_while_parser_fail0(lit, text), ICreole::ListItem)
+                    .parse(&line[head_tag.len() + 1..])
+                    // the collector always succeeds (empty content -> empty
+                    // item); the or_else only exists to keep the match total
+                    .unwrap_or_else(|_| (line, ICreole::ListItem(vec![])));
+                rst.push(v);
             } else {
                 // child
-                let child_head_tag = &line[..head_space.len()];
+                let child_head_tag = &line[..head_tag.len() + 1];
                 let mut child_lines = vec![line];
                 for line in &input[(i + 1)..] {
                     if line.starts_with(child_head_tag) {
@@ -238,49 +257,63 @@ fn _list<'a>(
                 }
                 to_skip = child_lines.len() - 1;
                 // debug!("child lines : {:?}, skip : {}", child_lines, to_skip);
-                if let Ok(v) = _list(child_head_tag)(child_lines) {
-                    rst.push(v);
-                }
+                rst.push(_list(child_head_tag)(child_lines));
             }
         }
-        Ok(if head_tag.ends_with('*') {
+        if head_tag.ends_with('*') {
             ICreole::BulletList(rst)
         } else {
             ICreole::NumberedList(rst)
-        })
+        }
     }
 }
 
+/// Byte index of the first `|` not preceded by an odd run of `~`: `~|` is
+/// the escaped pipe (literal), `~~|` still separates.
+fn first_unescaped_pipe(s: &str) -> Option<usize> {
+    let mut tilde_run = 0usize;
+    for (i, c) in s.char_indices() {
+        if c == '~' {
+            tilde_run += 1;
+            continue;
+        }
+        let sep = c == '|' && tilde_run % 2 == 0;
+        tilde_run = 0;
+        if sep {
+            return Some(i);
+        }
+    }
+    None
+}
+
 fn link(input: &str) -> IResult<&str, ICreole<'_>> {
-    let (left, (href, name)) = delimited(
-        tag("[["),
-        alt((
-            separated_pair(is_not("]|\n"), char('|'), is_not("]\n")),
-            map(is_not("]\n"), |v: &str| (v, v)),
-        )),
-        tag("]]"),
-    )
-    .parse(input)?;
+    let (left, content) = delimited(tag("[["), is_not("]\n"), tag("]]")).parse(input)?;
+    // `~|` inside a link is an escaped pipe: only an unescaped pipe splits
+    // href from name, so `[[A pipe ~| within links]]` is one free link
+    let (href, name) = match first_unescaped_pipe(content) {
+        Some(i) => (&content[..i], &content[i + 1..]),
+        None => (content, content),
+    };
 
     #[cfg(feature = "extend")]
-    let (_, v) = many0(alt((extend, map(is_not("<"), ICreole::Text)))).parse(name)?;
+    let (_, v) = many0(alt((
+        extend,
+        tilde_escape,
+        map(is_not("<~"), ICreole::Text),
+    )))
+    .parse(name)?;
     #[cfg(not(feature = "extend"))]
-    let v = vec![ICreole::Text(name)];
+    let (_, v) = many0(alt((tilde_escape, map(is_not("<~"), ICreole::Text)))).parse(name)?;
     Ok((left, ICreole::Link(href, v)))
 }
 fn image(input: &str) -> IResult<&str, ICreole<'_>> {
-    map(
-        delimited(
-            tag("{{"),
-            alt((
-                separated_pair(is_not("{}|\n"), tag("|"), is_not("{}\n")),
-                map(is_not("{}\n"), |src: &str| (src, "")),
-            )),
-            tag("}}"),
-        ),
-        |(src, label)| ICreole::Image(src, label),
-    )
-    .parse(input)
+    let (left, content) = delimited(tag("{{"), is_not("{}\n"), tag("}}")).parse(input)?;
+    // same tilde rule as `link`: `~|` does not separate src from label
+    let (src, label) = match first_unescaped_pipe(content) {
+        Some(i) => (&content[..i], &content[i + 1..]),
+        None => (content, ""),
+    };
+    Ok((left, ICreole::Image(src, label)))
 }
 
 #[cfg(feature = "extend")]
@@ -308,11 +341,10 @@ fn extend(input: &str) -> IResult<&str, ICreole<'_>> {
 //     ).parse(input)
 // }
 fn lit(input: &str) -> IResult<&str, ICreole<'_>> {
-    alt((link, image, text_style)).parse(input)
+    alt((tilde_escape, link, image, text_style)).parse(input)
 }
 fn dlit(input: &str) -> IResult<&str, ICreole<'_>> {
-    // alt((dont_format, lit)).parse(input)
-    alt((dont_format, link, image, text_style)).parse(input)
+    alt((dont_format, tilde_escape, link, image, text_style)).parse(input)
 }
 /// take any leftovers into plain text
 fn text(input: &str) -> IResult<&str, ICreole<'_>> {
@@ -517,20 +549,14 @@ fn heading(input: &str) -> IResult<&str, ICreole<'_>> {
             alt((take_until("\n"), rest)),
         ),
         |(level, body): (usize, &str)| {
+            // a trailing '=' run closes the heading whatever its length
+            // (a shorter closing run is spec-legal: `== a =` -> "a")
+            let body = body.trim_end().trim_end_matches('=').trim_end();
             ICreole::Heading(
                 level as u8,
-                if let Ok((_, v)) = take_dlit_text_until0().parse({
-                    let body = body.trim_end();
-                    if body.ends_with(&input[..level]) {
-                        // ignore ending space and '='s same as its opening
-                        body[..body.len() - level].trim_end()
-                    } else {
-                        body
-                    }
-                }) {
-                    v
-                } else {
-                    vec![]
+                match take_dlit_text_until0().parse(body) {
+                    Ok((_, v)) => v,
+                    Err(_) => vec![],
                 },
             )
         },
@@ -552,6 +578,29 @@ fn table_header_cell_inner(input: &str) -> IResult<&str, ICreole<'_>> {
     )
     .parse(input)
 }
+/// Split a table row body into cells at `sep` boundaries that are not
+/// escaped by an odd run of `~` (tilde escape: `| x~|y |` is one cell,
+/// `~~|` separates). Escaped pipes stay in the raw cell slice; the cell
+/// parser's `tilde_escape` renders them as a literal `|`.
+fn split_cells<'a>(line: &'a str, sep: &str) -> Vec<&'a str> {
+    let mut cells = Vec::new();
+    let mut start = 0;
+    let mut tilde_run = 0usize;
+    for (i, c) in line.char_indices() {
+        if c == '~' {
+            tilde_run += 1;
+            continue;
+        }
+        if line[i..].starts_with(sep) && tilde_run % 2 == 0 {
+            cells.push(&line[start..i]);
+            start = i + sep.len();
+        }
+        tilde_run = 0;
+    }
+    cells.push(&line[start..]);
+    cells
+}
+
 fn table_cell_inner(input: &str) -> IResult<&str, ICreole<'_>> {
     map(take_dlit_text_until_peek_char0('|'), ICreole::TableCell).parse(input)
 }
@@ -574,11 +623,11 @@ fn table_header_row(input: &str) -> IResult<&str, ICreole<'_>> {
     .parse(input)?;
     // debug!("table_header_row line : {}", line);
 
-    let (_, rst) = map(separated_list1(tag("|="), table_header_cell_inner), |v| {
-        ICreole::TableHeaderRow(v)
-    })
-    .parse(line)?;
-    Ok((left, rst))
+    let rst = split_cells(line, "|=")
+        .into_iter()
+        .filter_map(|c| table_header_cell_inner(c).ok().map(|(_, v)| v))
+        .collect();
+    Ok((left, ICreole::TableHeaderRow(rst)))
 }
 fn table_cell_row(input: &str) -> IResult<&str, ICreole<'_>> {
     let (left, line) = preceded(
@@ -597,11 +646,11 @@ fn table_cell_row(input: &str) -> IResult<&str, ICreole<'_>> {
     )
     .parse(input)?;
     // debug!("table_cell_row : {}", line);
-    let (_, rst) = map(separated_list1(tag("|"), table_cell_inner), |v| {
-        ICreole::TableRow(v)
-    })
-    .parse(line)?;
-    Ok((left, rst))
+    let rst = split_cells(line, "|")
+        .into_iter()
+        .filter_map(|c| table_cell_inner(c).ok().map(|(_, v)| v))
+        .collect();
+    Ok((left, ICreole::TableRow(rst)))
 }
 fn table(input: &str) -> IResult<&str, ICreole<'_>> {
     let mut rst = vec![];
@@ -810,6 +859,44 @@ mod tests {
         assert_eq!(
             try_creoles("//italic,\nnot closed."),
             Ok(("", vec![Paragraph(vec![Text("//italic,\nnot closed.")])]))
+        );
+
+        assert_eq!(
+            try_creoles("**a\nb**"),
+            Ok(("", vec![Paragraph(vec![Bold(vec![Text("a\nb")])])]))
+        );
+        assert_eq!(
+            try_creoles("//i\nj//"),
+            Ok(("", vec![Paragraph(vec![Italic(vec![Text("i\nj")])])]))
+        );
+        assert_eq!(
+            try_creoles("**//bi//**"),
+            Ok((
+                "",
+                vec![Paragraph(vec![Bold(vec![Italic(vec![Text("bi")])])])]
+            ))
+        );
+        assert_eq!(
+            try_creoles("**a [[l|t]] b**"),
+            Ok((
+                "",
+                vec![Paragraph(vec![Bold(vec![
+                    Text("a "),
+                    Link("l", vec![Text("t")]),
+                    Text(" b")
+                ])])]
+            ))
+        );
+        assert_eq!(
+            try_creoles("**a {{i.png|t}} b**"),
+            Ok((
+                "",
+                vec![Paragraph(vec![Bold(vec![
+                    Text("a "),
+                    Image("i.png", "t"),
+                    Text(" b")
+                ])])]
+            ))
         );
     }
 
@@ -1124,6 +1211,9 @@ mod tests {
                 )]
             ))
         );
+
+        assert_eq!(heading("== a ="), Ok(("", Heading(2, vec![Text("a")]))));
+        assert_eq!(heading("=== a =="), Ok(("", Heading(3, vec![Text("a")]))));
     }
 
     #[test]
@@ -1157,6 +1247,57 @@ mod tests {
                 "http://my.book.example/",
                 vec![Text("My Book Title")]
             )])])]
+        );
+        assert_eq!(
+            creoles("[[A ~| pipe]]"),
+            vec![Paragraph(vec![Link(
+                "A ~| pipe",
+                vec![Text("A "), Text("|"), Text(" pipe")]
+            )])]
+        );
+        assert_eq!(link("[[a~|b|c]]"), Ok(("", Link("a~|b", vec![Text("c")]))));
+    }
+
+    #[test]
+    fn escape_tests() {
+        init();
+        use ICreole::*;
+        assert_eq!(
+            creoles("~**not bold**"),
+            vec![Paragraph(vec![Text("**"), Text("not bold**")])]
+        );
+        assert_eq!(
+            creoles("~~esc ~~x"),
+            vec![Paragraph(vec![
+                Text("~"),
+                Text("esc "),
+                Text("~"),
+                Text("x")
+            ])]
+        );
+        assert_eq!(
+            creoles("~ bold?"),
+            vec![Paragraph(vec![Text(" "), Text("bold?")])]
+        );
+        assert_eq!(
+            creoles("~- item\nplain"),
+            vec![Paragraph(vec![Text("-"), Text(" item\nplain")])]
+        );
+        assert_eq!(
+            creoles("~= t"),
+            vec![Paragraph(vec![Text("="), Text(" t")])]
+        );
+        assert_eq!(
+            creoles("~~~|x"),
+            vec![Paragraph(vec![Text("~"), Text("|"), Text("x")])]
+        );
+        assert_eq!(
+            creoles("**a\\\\b**"),
+            vec![Paragraph(vec![Bold(vec![
+                Text("a"),
+                ForceLinebreak,
+                Text("b")
+            ])])]
         );
     }
 
@@ -1273,6 +1414,29 @@ mod tests {
                 ]),
             ])]
         );
+
+        assert_eq!(
+            try_creoles("| x~|y |"),
+            Ok((
+                "",
+                vec![Table(vec![TableRow(vec![TableCell(vec![
+                    Text(" x"),
+                    Text("|"),
+                    Text("y ")
+                ])])])]
+            ))
+        );
+        assert_eq!(
+            try_creoles("|= h~|=h2 |"),
+            Ok((
+                "",
+                vec![Table(vec![TableHeaderRow(vec![TableHeaderCell(vec![
+                    Text(" h"),
+                    Text("|"),
+                    Text("=h2 ")
+                ])])])]
+            ))
+        );
     }
 
     #[test]
@@ -1298,7 +1462,9 @@ mod tests {
             creoles("a {{i.png|t}} b"),
             vec![Paragraph(vec![Text("a "), Image("i.png", "t"), Text(" b")])]
         );
+        assert_eq!(image("{{i.png|a~|b}}"), Ok(("", Image("i.png", "a~|b"))));
     }
+
     #[cfg(feature = "extend")]
     #[test]
     fn extend_tests() {
