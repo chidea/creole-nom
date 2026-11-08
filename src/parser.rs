@@ -1407,7 +1407,7 @@ mod tests {
         use super::*;
         use std::time::Instant;
 
-        fn report(name: &str, f: fn()) {
+        fn report(name: &str, f: impl Fn()) {
             const N: usize = 20_000;
             for _ in 0..200 {
                 f();
@@ -1450,6 +1450,41 @@ mod tests {
             report("mixed_tests", mixed_tests);
             #[cfg(feature = "extend")]
             report("extend_tests", extend_tests);
+        }
+
+        /// Logos lexer vs nom pipeline on identical fixture strings:
+        /// `lex vec` = full tokenization into Vec<Tok>, `lex scan` = DFA pass
+        /// without materializing, `nom` = current full parse via creoles().
+        #[test]
+        #[ignore]
+        fn time_profile_logos() {
+            use crate::lexer::{lex_count, lex_vec};
+            use std::hint::black_box;
+            let samples: &[(&str, &str)] = &[
+                ("text", "The quick brown fox jumps over the lazy dog 123"),
+                ("style", "**bold** and //italic// mixed with plain text"),
+                ("heading", "== A medium heading =="),
+                ("link", "[[http://example.com|Example]] and [[Internal link]]"),
+                ("image", "{{img/photo.jpg|alt text}} inline {{b.png|}}"),
+                ("list", "* item a\n** item b\n*** item c\n# ordered 1\n## ordered 2\n### deep"),
+                ("table", "|=Name|=Irene\n|=Relationship|Wife\n|=Children|Kat, Peter"),
+                ("mixed", "a [[http://x|t]] **b** //i// {{f.png|alt}}\\\ntail **B** ~~esc~~ end"),
+                ("cjk", "文本测试 **粗体** //斜体// [[链接|标题]] {{图|alt}}"),
+            ];
+            for (name, s) in samples {
+                report(&format!("lex vec  {name}"), {
+                    let s = *s;
+                    move || { black_box(&lex_vec(s)); }
+                });
+                report(&format!("lex scan {name}"), {
+                    let s = *s;
+                    move || { black_box(lex_count(s)); }
+                });
+                report(&format!("nom      {name}"), {
+                    let s = *s;
+                    move || { black_box(&creoles(s)); }
+                });
+            }
         }
     }
 }

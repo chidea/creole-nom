@@ -30,6 +30,8 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
   `CowStr`/`InlineStr` types, referenced by nothing; its serde impls even gate on a
   `feature = "serde"` that Cargo.toml never declares.
 - `src/main.rs` — scratch nom demo (`tag("hello")`); does not use the crate. Not a CLI.
+- `src/lexer.rs` — `logos` tokenizer experiment (`Tok`, `lex_vec`, `lex_count`) for the
+  lexer-vs-nom benchmark; zero-alloc token slices, not wired into `creoles`.
 - Feature-gated AST variants + parsers: `extend` (`<<Icon(x)>>` → `Extend`), `font-color`
   (`Color`), `fold` (`Fold`), `link-button` (`[{…}]` → `LinkButton`); `extended` = all four.
   Caveat: `Color`'s parser is fully commented out (`src/parser.rs:515-531`) — constructible
@@ -39,9 +41,9 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
 
 ## Key Directories
 
-- `src/` — 5 files, flat; no `tests/`, `examples/`, `benches/`, no CI, no `unsafe`.
+- `src/` — 6 files, flat; no `tests/`, `examples/`, `benches/`, no CI, no `unsafe`.
 - Root scripts `test.sh`, `watch_test.sh`, `debug_test.sh`, `t.ps1` are test wrappers,
-  excluded from the published crate (`exclude = ["*.sh", "*.ps1"]` in Cargo.toml).
+  excluded from the published crate (`exclude = ["*.sh", "*.ps1", "*.log"]` in Cargo.toml).
 
 ## Development Commands
 
@@ -145,4 +147,9 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
 - `parser::tests::time_profile` (kept in `src/parser.rs`, `#[ignore]`d — normal suite stays
   fast): calls every test fn 20k× with per-iteration timing. Invoke
   `cargo test --features extended -- --ignored --nocapture time_profile` (add `--release`
-  for release numbers); last run captured to `/tmp/creole-nom-profile.log` (2026-11-08).
+  for release numbers — add `--exact` to run one profile fn alone); last run captured to
+  `creole-nom-profile.log` (repo root, 2026-11-08).
+- `parser::tests::time_profile_logos` (also `#[ignore]`d): identical fixture strings through
+  the `logos` lexer — `lex vec` = tokenize into `Vec<Tok>`, `lex scan` = DFA pass without
+  materializing, `nom` = `creoles()` full parse. Run with `--exact` (bare `time_profile`
+  substring also matches this fn and double-prints into one log).

@@ -9,7 +9,7 @@ repository = "https://github.com/chidea/creole-nom"
 readme = "README.md"
 keywords = ["wiki", "markdown", "parser", "creole", "nom"]
 categories = ["parser-implementations"]
-exclude = [ "*.sh", "*.ps1" ]
+exclude = [ "*.sh", "*.ps1", "*.log" ]
 
 [features]
 extended = ["link-button", "font-color", "fold", "extend"]
@@ -23,6 +23,7 @@ fold = []
 nom = "8"
 log = "0"
 serde = {version="1", features=["derive"]}
+logos = "0.16.1"
 
 [dev-dependencies]
 env_logger = "0"

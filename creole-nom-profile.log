@@ -1,0 +1,88 @@
+# creole-nom time profile — 2026-11-08 18:58 — N=20000/warm=200 per case
+# run: cargo test --features extended -- --ignored --exact --nocapture parser::tests::time_profile::time_profile[_logos]
+
+## DEBUG — per test case (nom pipeline)
+text_tests       n=20000  mean=    5.56us  p50=    5.53us  min=    5.24us  p95=    5.63us  max=    28.13us  total=  111.3ms
+parser_tests     n=20000  mean=   30.58us  p50=   30.37us  min=   28.89us  p95=   30.93us  max=   120.46us  total=  611.7ms
+heading_tests    n=20000  mean=   49.11us  p50=   48.90us  min=   46.93us  p95=   49.99us  max=   199.10us  total=  982.2ms
+text_style_tests n=20000  mean=   73.42us  p50=   73.12us  min=   70.61us  p95=   74.50us  max=   212.19us  total= 1468.4ms
+link_tests       n=20000  mean=   23.16us  p50=   23.09us  min=   22.29us  p95=   23.31us  max=   116.59us  total=  463.2ms
+image_tests      n=20000  mean=   19.34us  p50=   19.27us  min=   18.49us  p95=   19.46us  max=    72.96us  total=  386.7ms
+linebreak_tests  n=20000  mean=   17.90us  p50=   17.84us  min=   17.19us  p95=   18.06us  max=    49.18us  total=  358.1ms
+list_tests       n=20000  mean=   98.22us  p50=   97.97us  min=   94.86us  p95=   99.59us  max=   237.76us  total= 1964.3ms
+table_tests      n=20000  mean=   84.47us  p50=   84.17us  min=   81.14us  p95=   85.70us  max=   231.30us  total= 1689.4ms
+other_tests      n=20000  mean=   50.65us  p50=   50.42us  min=   48.61us  p95=   51.54us  max=   158.29us  total= 1013.0ms
+mixed_tests      n=20000  mean=   14.23us  p50=   14.15us  min=   13.50us  p95=   14.36us  max=    57.60us  total=  284.5ms
+extend_tests     n=20000  mean=    1.87us  p50=    1.84us  min=    1.72us  p95=    1.89us  max=    16.47us  total=   37.3ms
+
+## DEBUG — logos lexer vs nom (lex vec=materialize Vec<Tok>, lex scan=DFA pass only, nom=full parse)
+lex vec  text    n=20000  mean=    0.22us  p50=    0.19us  min=    0.17us  p95=    0.20us  max=     1.65us  total=    4.3ms
+lex scan text    n=20000  mean=    0.23us  p50=    0.21us  min=    0.20us  p95=    0.22us  max=     2.16us  total=    4.7ms
+nom      text    n=20000  mean=   47.71us  p50=   47.54us  min=   45.25us  p95=   48.45us  max=   119.52us  total=  954.2ms
+lex vec  style   n=20000  mean=    0.45us  p50=    0.42us  min=    0.40us  p95=    0.44us  max=     1.93us  total=    8.9ms
+lex scan style   n=20000  mean=    0.44us  p50=    0.41us  min=    0.38us  p95=    0.47us  max=     1.77us  total=    8.9ms
+nom      style   n=20000  mean=   35.10us  p50=   34.97us  min=   33.39us  p95=   35.62us  max=    98.13us  total=  702.0ms
+lex vec  heading n=20000  mean=    0.21us  p50=    0.19us  min=    0.18us  p95=    0.20us  max=     2.39us  total=    4.2ms
+lex scan heading n=20000  mean=    0.19us  p50=    0.16us  min=    0.16us  p95=    0.17us  max=     2.85us  total=    3.7ms
+nom      heading n=20000  mean=   13.04us  p50=   12.99us  min=   12.64us  p95=   13.17us  max=    20.64us  total=  260.8ms
+lex vec  link    n=20000  mean=    0.59us  p50=    0.56us  min=    0.50us  p95=    0.59us  max=     3.00us  total=   11.8ms
+lex scan link    n=20000  mean=    0.49us  p50=    0.47us  min=    0.44us  p95=    0.49us  max=     1.85us  total=    9.9ms
+nom      link    n=20000  mean=   11.70us  p50=   11.58us  min=   10.96us  p95=   11.81us  max=    62.57us  total=  234.0ms
+lex vec  image   n=20000  mean=    0.57us  p50=    0.54us  min=    0.50us  p95=    0.57us  max=     3.40us  total=   11.4ms
+lex scan image   n=20000  mean=    0.48us  p50=    0.46us  min=    0.42us  p95=    0.49us  max=     2.24us  total=    9.7ms
+nom      image   n=20000  mean=   13.21us  p50=   13.16us  min=   12.51us  p95=   13.36us  max=    41.52us  total=  264.1ms
+lex vec  list    n=20000  mean=    0.74us  p50=    0.71us  min=    0.68us  p95=    0.75us  max=     5.64us  total=   14.9ms
+lex scan list    n=20000  mean=    0.70us  p50=    0.66us  min=    0.62us  p95=    0.71us  max=     2.88us  total=   13.9ms
+nom      list    n=20000  mean=   34.71us  p50=   34.51us  min=   33.23us  p95=   35.19us  max=   121.86us  total=  694.3ms
+lex vec  table   n=20000  mean=    0.76us  p50=    0.74us  min=    0.70us  p95=    0.77us  max=     2.23us  total=   15.3ms
+lex scan table   n=20000  mean=    0.67us  p50=    0.64us  min=    0.61us  p95=    0.67us  max=     4.82us  total=   13.4ms
+nom      table   n=20000  mean=   62.47us  p50=   62.12us  min=   59.77us  p95=   63.47us  max=   151.63us  total= 1249.4ms
+lex vec  mixed   n=20000  mean=    1.33us  p50=    1.28us  min=    1.18us  p95=    1.33us  max=    21.30us  total=   26.6ms
+lex scan mixed   n=20000  mean=    1.15us  p50=    1.12us  min=    1.04us  p95=    1.16us  max=     3.45us  total=   23.0ms
+nom      mixed   n=20000  mean=   35.22us  p50=   35.01us  min=   33.68us  p95=   35.56us  max=   134.37us  total=  704.4ms
+lex vec  cjk     n=20000  mean=    1.24us  p50=    1.21us  min=    1.14us  p95=    1.29us  max=     4.35us  total=   24.9ms
+lex scan cjk     n=20000  mean=    1.12us  p50=    1.07us  min=    0.92us  p95=    1.14us  max=    27.77us  total=   22.5ms
+nom      cjk     n=20000  mean=   17.02us  p50=   16.95us  min=   16.07us  p95=   17.24us  max=    80.36us  total=  340.4ms
+
+## RELEASE — per test case (nom pipeline)
+text_tests       n=20000  mean=    0.53us  p50=    0.50us  min=    0.47us  p95=    0.53us  max=     4.10us  total=   10.5ms
+parser_tests     n=20000  mean=    1.56us  p50=    1.53us  min=    1.46us  p95=    1.58us  max=     4.10us  total=   31.1ms
+heading_tests    n=20000  mean=    3.19us  p50=    3.16us  min=    3.00us  p95=    3.24us  max=     7.92us  total=   63.7ms
+text_style_tests n=20000  mean=    3.08us  p50=    3.02us  min=    2.87us  p95=    3.11us  max=    26.33us  total=   61.6ms
+link_tests       n=20000  mean=    1.56us  p50=    1.54us  min=    1.41us  p95=    1.60us  max=     4.78us  total=   31.2ms
+image_tests      n=20000  mean=    1.44us  p50=    1.41us  min=    1.32us  p95=    1.46us  max=     5.78us  total=   28.7ms
+linebreak_tests  n=20000  mean=    1.12us  p50=    1.10us  min=    1.04us  p95=    1.15us  max=     4.40us  total=   22.5ms
+list_tests       n=20000  mean=    7.72us  p50=    7.64us  min=    7.18us  p95=    7.86us  max=    39.28us  total=  154.4ms
+table_tests      n=20000  mean=    5.50us  p50=    5.44us  min=    5.11us  p95=    5.60us  max=    22.32us  total=  110.1ms
+other_tests      n=20000  mean=    2.44us  p50=    2.41us  min=    2.26us  p95=    2.48us  max=     8.81us  total=   48.7ms
+mixed_tests      n=20000  mean=    1.05us  p50=    1.03us  min=    0.97us  p95=    1.07us  max=     4.10us  total=   21.1ms
+extend_tests     n=20000  mean=    0.40us  p50=    0.38us  min=    0.37us  p95=    0.39us  max=     3.72us  total=    8.0ms
+
+## RELEASE — logos lexer vs nom
+lex vec  text    n=20000  mean=    0.05us  p50=    0.03us  min=    0.02us  p95=    0.03us  max=     0.11us  total=    1.0ms
+lex scan text    n=20000  mean=    0.04us  p50=    0.02us  min=    0.02us  p95=    0.02us  max=     0.77us  total=    0.8ms
+nom      text    n=20000  mean=    1.55us  p50=    1.52us  min=    1.50us  p95=    1.55us  max=    13.52us  total=   31.0ms
+lex vec  style   n=20000  mean=    0.10us  p50=    0.08us  min=    0.07us  p95=    0.09us  max=     0.85us  total=    2.0ms
+lex scan style   n=20000  mean=    0.04us  p50=    0.03us  min=    0.02us  p95=    0.03us  max=     0.05us  total=    0.9ms
+nom      style   n=20000  mean=    1.10us  p50=    1.08us  min=    1.05us  p95=    1.11us  max=     4.71us  total=   22.0ms
+lex vec  heading n=20000  mean=    0.05us  p50=    0.03us  min=    0.02us  p95=    0.03us  max=     0.90us  total=    0.9ms
+lex scan heading n=20000  mean=    0.04us  p50=    0.02us  min=    0.02us  p95=    0.03us  max=     0.06us  total=    0.8ms
+nom      heading n=20000  mean=    0.53us  p50=    0.51us  min=    0.50us  p95=    0.52us  max=     3.33us  total=   10.6ms
+lex vec  link    n=20000  mean=    0.11us  p50=    0.09us  min=    0.09us  p95=    0.10us  max=     2.10us  total=    2.3ms
+lex scan link    n=20000  mean=    0.05us  p50=    0.03us  min=    0.03us  p95=    0.04us  max=     0.40us  total=    1.0ms
+nom      link    n=20000  mean=    0.46us  p50=    0.44us  min=    0.42us  p95=    0.46us  max=     2.15us  total=    9.2ms
+lex vec  image   n=20000  mean=    0.12us  p50=    0.10us  min=    0.09us  p95=    0.11us  max=     1.67us  total=    2.4ms
+lex scan image   n=20000  mean=    0.05us  p50=    0.03us  min=    0.03us  p95=    0.04us  max=     1.23us  total=    1.0ms
+nom      image   n=20000  mean=    0.46us  p50=    0.44us  min=    0.42us  p95=    0.46us  max=     3.05us  total=    9.3ms
+lex vec  list    n=20000  mean=    0.15us  p50=    0.13us  min=    0.12us  p95=    0.14us  max=     2.89us  total=    3.0ms
+lex scan list    n=20000  mean=    0.07us  p50=    0.05us  min=    0.04us  p95=    0.06us  max=     0.60us  total=    1.3ms
+nom      list    n=20000  mean=    1.52us  p50=    1.49us  min=    1.42us  p95=    1.54us  max=     5.83us  total=   30.3ms
+lex vec  table   n=20000  mean=    0.14us  p50=    0.12us  min=    0.11us  p95=    0.13us  max=     5.46us  total=    2.8ms
+lex scan table   n=20000  mean=    0.06us  p50=    0.04us  min=    0.04us  p95=    0.05us  max=     1.14us  total=    1.2ms
+nom      table   n=20000  mean=    2.08us  p50=    2.05us  min=    2.02us  p95=    2.10us  max=     4.95us  total=   41.6ms
+lex vec  mixed   n=20000  mean=    0.18us  p50=    0.16us  min=    0.15us  p95=    0.17us  max=     1.63us  total=    3.6ms
+lex scan mixed   n=20000  mean=    0.09us  p50=    0.07us  min=    0.06us  p95=    0.09us  max=     0.29us  total=    1.8ms
+nom      mixed   n=20000  mean=    1.24us  p50=    1.22us  min=    1.15us  p95=    1.27us  max=     4.69us  total=   24.9ms
+lex vec  cjk     n=20000  mean=    0.19us  p50=    0.16us  min=    0.15us  p95=    0.18us  max=     2.88us  total=    3.7ms
+lex scan cjk     n=20000  mean=    0.08us  p50=    0.06us  min=    0.06us  p95=    0.07us  max=     1.08us  total=    1.6ms
+nom      cjk     n=20000  mean=    0.62us  p50=    0.60us  min=    0.55us  p95=    0.64us  max=     3.25us  total=   12.5ms
