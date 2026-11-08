@@ -74,10 +74,7 @@ mod tests {
 
     #[test]
     fn lexer_smoke() {
-        assert_eq!(
-            lex_vec("= H ="),
-            vec![EqRun("="), Text(" H "), EqRun("=")]
-        );
+        assert_eq!(lex_vec("= H ="), vec![EqRun("="), Text(" H "), EqRun("=")]);
         assert_eq!(
             lex_vec("* a\n**[[l|t]]\\\\x"),
             vec![

@@ -4,6 +4,8 @@ use log::{debug, error, info};
 use {
     crate::creole::ICreole,
     nom::{
+        IResult,
+        Parser,
         branch::alt,
         bytes::complete::{
             // take_until1,
@@ -58,6 +60,9 @@ use {
             ParseError,
         },
         multi::{
+            // many1,
+            // many1,
+            many_m_n,
             // fill, // fill given slice or fail
             // fold_many0, // apply until fail
             // fold_many1, // same, does not allow empty result
@@ -68,9 +73,6 @@ use {
             // many0_count, // repeat parser until fails and return the count of successful iteration
             // many1_count, // same, fail on zero
             many0,
-            // many1,
-            // many1,
-            many_m_n,
             // many_till,
             separated_list0,
             separated_list1, // two parsers for list
@@ -83,10 +85,16 @@ use {
             separated_pair, // "a,b" => ("a", "b")
             terminated,     // "a)" => "a"
         },
-        IResult,
-        Parser,
     },
 };
+/// Uniform error construction: the only kinds produced by this parser are Tag and Eof.
+fn err_tag<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::Err<E> {
+    nom::Err::Error(E::from_error_kind(input, ErrorKind::Tag))
+}
+
+fn err_eof<'a, E: ParseError<&'a str>>(input: &'a str) -> nom::Err<E> {
+    nom::Err::Error(E::from_error_kind(input, ErrorKind::Eof))
+}
 
 // fn parse_tilde_escape<'a, E>(input: &'a str) -> IResult<&'a str, char, E>
 // where
@@ -188,10 +196,7 @@ fn list(input: &str) -> IResult<&str, ICreole<'_>> {
 
     // debug!("list recognized : {:?}", lines);
     if lines.is_empty() {
-        return Err(nom::Err::Error(nom::error::Error {
-            input,
-            code: ErrorKind::Tag,
-        }));
+        return Err(err_tag(input));
     }
     let v = _list(&input[..1])(lines)?;
 
@@ -224,7 +229,7 @@ fn _list<'a>(
                 let child_head_tag = &line[..head_space.len()];
                 let mut child_lines = vec![line];
                 for line in &input[(i + 1)..] {
-                    if line.starts_with(&child_head_tag) {
+                    if line.starts_with(child_head_tag) {
                         child_lines.push(*line);
                     } else {
                         break;
@@ -367,16 +372,10 @@ fn take_while_parser_fail<'a, E: ParseError<&'a str>>(
             if let Ok((_, f)) = fail_parser.parse(&input[..l]) {
                 Ok((&input[input.len()..], (Some(f), None)))
             } else {
-                Err(nom::Err::Error(ParseError::from_error_kind(
-                    input,
-                    ErrorKind::Tag,
-                )))
+                Err(err_tag(input))
             }
         } else {
-            Err(nom::Err::Error(ParseError::from_error_kind(
-                input,
-                ErrorKind::Eof,
-            )))
+            Err(err_eof(input))
         }
     }
 }
@@ -415,10 +414,7 @@ fn collect_opt_pair1<'a, E: ParseError<&'a str>>(
         }
         // debug!("collect_opt_pair rst : {:?}", rst);
         if rst.is_empty() {
-            Err(nom::Err::Error(ParseError::from_error_kind(
-                input,
-                ErrorKind::Eof,
-            )))
+            Err(err_eof(input))
         } else {
             Ok((i, rst))
         }
@@ -451,16 +447,10 @@ fn take_while_parser_fail_or<'a, E: ParseError<&'a str>>(
             if let Ok((_, f)) = fail_parser.parse(&input[..l]) {
                 Ok(("", (Some(f), None)))
             } else {
-                Err(nom::Err::Error(ParseError::from_error_kind(
-                    input,
-                    ErrorKind::Tag,
-                )))
+                Err(err_tag(input))
             }
         } else {
-            Err(nom::Err::Error(ParseError::from_error_kind(
-                input,
-                ErrorKind::Eof,
-            )))
+            Err(err_eof(input))
         }
     }
 }
@@ -626,32 +616,22 @@ fn table_cell_row(input: &str) -> IResult<&str, ICreole<'_>> {
 }
 fn table(input: &str) -> IResult<&str, ICreole<'_>> {
     let mut rst = vec![];
-    let mut rest = input;
     // debug!("table input : {}", input);
-    if let Ok((rest, body)) = if let Ok((r, head)) = table_header_row(input) {
+    let (rest, body) = if let Ok((r, head)) = table_header_row(input) {
         // debug!("table head : {:?}", head);
         rst.push(head);
-        rest = r;
-        separated_list0(char('\n'), table_cell_row).parse(r)
+        match separated_list0(char('\n'), table_cell_row).parse(r) {
+            Ok((rest, body)) => (rest, body),
+            Err(_) => return Ok((r, ICreole::Table(rst))),
+        }
     } else {
         // debug!("table head is empty");
-        separated_list1(char('\n'), table_cell_row).parse(input)
-    } {
-        // debug!("body : {:?}", body);
-        return Ok((rest, ICreole::Table([rst, body].concat())));
-    } else if !rst.is_empty() {
-        // debug!("no body found, result : {:?}", rst);
-        return Ok((rest, ICreole::Table(rst)));
+        match separated_list1(char('\n'), table_cell_row).parse(input) {
+            Ok(parsed) => parsed,
+            Err(_) => return Err(err_tag(input)),
+        }
     };
-    // debug!("table : {:?}", rst);
-    if rst.is_empty() {
-        Err(nom::Err::Error(nom::error::Error {
-            input,
-            code: ErrorKind::Tag,
-        }))
-    } else {
-        Ok((rest, ICreole::Table(rst)))
-    }
+    Ok((rest, ICreole::Table([rst, body].concat())))
 }
 
 #[cfg(feature = "fold")]
@@ -667,7 +647,7 @@ fn fold(input: &str) -> IResult<&str, ICreole<'_>> {
 //     fail_parser: impl Parser<&'a str, Output = ICreole<'a>, Error = E>,
 // ) -> impl Parser<&'a str, Output = Vec<ICreole<'a>>, Error = E> {
 // }
-/// parse things that should be collected as paragraph
+// parse things that should be collected as paragraph
 // fn take_text_on_parser_fail<'a, E: ParseError<&'a str>>(
 //     parser: &mut impl Parser<&'a str, Output = ICreole<'a>, Error = E>,
 //     input: &'a str,
@@ -1115,7 +1095,10 @@ mod tests {
         );
         assert_eq!(
             try_creoles("= a:[[a]]"),
-            Ok(("", vec![Heading(1, vec![Text("a:"), Link("a", vec![Text("a")])])]))
+            Ok((
+                "",
+                vec![Heading(1, vec![Text("a:"), Link("a", vec![Text("a")])])]
+            ))
         );
 
         assert_eq!(heading("=== b"), Ok(("", Heading(3, vec![Text("b")]))));
@@ -1125,31 +1108,56 @@ mod tests {
 
         assert_eq!(
             try_creoles("= [[a]]//a"),
-            Ok(("", vec![Heading(1, vec![Link("a", vec![Text("a")]), Text("//a")])]))
+            Ok((
+                "",
+                vec![Heading(1, vec![Link("a", vec![Text("a")]), Text("//a")])]
+            ))
         );
-        assert_eq!(try_creoles("= [[http://www.wikicreole.org|Creole]] //Live// Editor ([[https://github.com/chidea/wasm-creole-live-editor|github]])"), Ok(("", vec![
-      Heading(1, vec![
-        Link("http://www.wikicreole.org", vec![Text("Creole")]),
-        Text(" "),
-        Italic(vec![Text("Live")]),
-        Text(" Editor ("),
-        Link("https://github.com/chidea/wasm-creole-live-editor", vec![Text("github")]),
-        Text(")"),
-    ])])));
+        assert_eq!(
+            try_creoles(
+                "= [[http://www.wikicreole.org|Creole]] //Live// Editor ([[https://github.com/chidea/wasm-creole-live-editor|github]])"
+            ),
+            Ok((
+                "",
+                vec![Heading(
+                    1,
+                    vec![
+                        Link("http://www.wikicreole.org", vec![Text("Creole")]),
+                        Text(" "),
+                        Italic(vec![Text("Live")]),
+                        Text(" Editor ("),
+                        Link(
+                            "https://github.com/chidea/wasm-creole-live-editor",
+                            vec![Text("github")]
+                        ),
+                        Text(")"),
+                    ]
+                )]
+            ))
+        );
     }
 
     #[test]
     fn link_tests() {
         init();
         use ICreole::*;
-        assert_eq!(creoles("[[a]]"), vec![Paragraph(vec![Link("a", vec![Text("a")])])]);
+        assert_eq!(
+            creoles("[[a]]"),
+            vec![Paragraph(vec![Link("a", vec![Text("a")])])]
+        );
         assert_eq!(
             creoles("[[https://google.com|google]]"),
-            vec![Paragraph(vec![Link("https://google.com", vec![Text("google")])])]
+            vec![Paragraph(vec![Link(
+                "https://google.com",
+                vec![Text("google")]
+            )])]
         );
         assert_eq!(link("[[a]]"), Ok(("", Link("a", vec![Text("a")]))));
         assert_eq!(creoles("[a]"), vec![Paragraph(vec![Text("[a]")])]);
-        assert_eq!(link("[[link|label]]"), Ok(("", Link("link", vec![Text("label")]))));
+        assert_eq!(
+            link("[[link|label]]"),
+            Ok(("", Link("link", vec![Text("label")])))
+        );
         assert_eq!(
             link("[[https://google.com|google]]"),
             Ok(("", Link("https://google.com", vec![Text("google")])))
@@ -1464,25 +1472,43 @@ mod tests {
                 ("text", "The quick brown fox jumps over the lazy dog 123"),
                 ("style", "**bold** and //italic// mixed with plain text"),
                 ("heading", "== A medium heading =="),
-                ("link", "[[http://example.com|Example]] and [[Internal link]]"),
+                (
+                    "link",
+                    "[[http://example.com|Example]] and [[Internal link]]",
+                ),
                 ("image", "{{img/photo.jpg|alt text}} inline {{b.png|}}"),
-                ("list", "* item a\n** item b\n*** item c\n# ordered 1\n## ordered 2\n### deep"),
-                ("table", "|=Name|=Irene\n|=Relationship|Wife\n|=Children|Kat, Peter"),
-                ("mixed", "a [[http://x|t]] **b** //i// {{f.png|alt}}\\\ntail **B** ~~esc~~ end"),
+                (
+                    "list",
+                    "* item a\n** item b\n*** item c\n# ordered 1\n## ordered 2\n### deep",
+                ),
+                (
+                    "table",
+                    "|=Name|=Irene\n|=Relationship|Wife\n|=Children|Kat, Peter",
+                ),
+                (
+                    "mixed",
+                    "a [[http://x|t]] **b** //i// {{f.png|alt}}\\\ntail **B** ~~esc~~ end",
+                ),
                 ("cjk", "文本测试 **粗体** //斜体// [[链接|标题]] {{图|alt}}"),
             ];
             for (name, s) in samples {
                 report(&format!("lex vec  {name}"), {
                     let s = *s;
-                    move || { black_box(&lex_vec(s)); }
+                    move || {
+                        black_box(&lex_vec(s));
+                    }
                 });
                 report(&format!("lex scan {name}"), {
                     let s = *s;
-                    move || { black_box(lex_count(s)); }
+                    move || {
+                        black_box(lex_count(s));
+                    }
                 });
                 report(&format!("nom      {name}"), {
                     let s = *s;
-                    move || { black_box(&creoles(s)); }
+                    move || {
+                        black_box(&creoles(s));
+                    }
                 });
             }
         }

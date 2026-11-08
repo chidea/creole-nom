@@ -1,0 +1,55 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            args: ""
+          - name: extend
+            args: "--features extend"
+          - name: link-button
+            args: "--features link-button"
+          - name: font-color
+            args: "--features font-color"
+          - name: fold
+            args: "--features fold"
+          - name: extended
+            args: "--features extended"
+    name: cargo test (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test ${{ matrix.args }}
+
+  powerset-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-hack --locked
+      # every feature-pair combination must check: the cfg arms inside alt()
+      # tuples require full matrix coverage (see AGENTS.md "Code Conventions")
+      - run: cargo hack --feature-powerset --depth 2 check --all-targets
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --features extended -- -D warnings

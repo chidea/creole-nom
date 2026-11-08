@@ -28,3 +28,9 @@ logos = "0.16.1"
 
 [dev-dependencies]
 env_logger = "0"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
