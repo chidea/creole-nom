@@ -30,11 +30,14 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
   length, `tilde_escape` renders `~` escapes (space, `~`, markup opens, `|` `#` `=` `-`),
   `split_cells` + `first_unescaped_pipe` give `~|` the tilde rule, and `link`/`image`
   render names through `tilde_escape`.
+- Adjacent `Text` nodes are coalesced by `merge_text(input, parts)` at every inline-list
+  choke point (`collect_opt_pair1`): siblings whose `&str` slices are *physically contiguous*
+  merge into one node (escapes, prefilter skips); a gap or interleaved node keeps them split —
+  `Text("|")` markers are NEVER glued to neighbours.
 - `src/creole.rs` — AST only: `ICreole<'a>` enum holding `&'a str` slices (no allocation),
   derives `Debug, Clone, Serialize, Deserialize, PartialEq`, manual `impl Eq`.
-- `src/parser.rs` — all parsing + all inline tests: parsers :1-807 (public entry points at the
-  end: `try_creoles` :809, `creoles` :822), `mod tests` from :830 (1703 lines total).
-- `src/main.rs` — scratch nom demo (`tag("hello")`); does not use the crate. Not a CLI.
+- `src/parser.rs` — all parsing + all inline tests: parsers :1-844 (public entry points at the
+  end: `try_creoles` :833, `creoles` :837), `mod tests` from :846 (1760 lines total).
 - `src/lexer.rs` — `logos` tokenizer (`Tok`, `lex_vec`, `lex_count` from the lexer-vs-nom
   bench) plus `next_inline_stop`/`is_scan_stop`, which now **drive** the inline text
   collectors in `parser.rs` (DFA jump between markup candidates; `lit`/`dlit` semantics
@@ -44,12 +47,12 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
   Caveat: `Color`'s parser is fully commented out — constructible but never produced;
   decided 2026-11-08: implement later as `[[color:red|text]]`, designed in one pass with
   free link so all `[[…]]` sub-syntaxes land together. The `icon` feature has zero live consumers.
-- Targets are autodiscovered: lib `creole_nom` **and** bin `creole-nom` (`src/main.rs`);
+- Only target is the lib `creole_nom` (scratch `src/main.rs` bin deleted 2026-11-08);
   Cargo.toml declares `rust-version = "1.85"` and a `[lints]` section (see Important Files).
 
 ## Key Directories
 
-- `src/` — 5 files, flat (`lib.rs`, `creole.rs`, `parser.rs`, `main.rs`, `lexer.rs`); no
+- `src/` — 4 files, flat (`lib.rs`, `creole.rs`, `parser.rs`, `lexer.rs`); no
   `benches/`, no `unsafe` (`[lints.rust] unsafe_code = "forbid"`).
 - `examples/creole_test_input.rs` + `examples/CreoleTestInput.txt` — upstream WikiCreole 1.0
   corpus smoke runner: `cargo run --release --example creole_test_input` must print
@@ -120,7 +123,7 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
 - `src/parser.rs` — every parser, entry points `try_creoles`/`creoles` (:809/:822), inline tests.
 - `src/creole.rs` — AST; a new markup node = variant here + parser fn + feature cfg if optional.
 - `.gitignore` ignores `Cargo.lock` (library convention); tree is a git checkout since
-  2026-11-08 (`4dd0019` green baseline, `3c770f8` logos experiment, `cf559f7` cleanup).
+  2026-11-08 (`4dd0019` green baseline → lexer + Batch A/B/C same day, tip `a89d087`).
 
 ## Runtime/Tooling Preferences
 

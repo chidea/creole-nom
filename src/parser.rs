@@ -447,6 +447,30 @@ fn collect_opt_pair0<'a, E: ParseError<&'a str>>(
 ) -> impl Parser<&'a str, Output = Vec<ICreole<'a>>, Error = E> {
     alt((collect_opt_pair1(parser), success(vec![])))
 }
+/// Coalesce adjacent `Text` nodes whose content slices are physically
+/// contiguous in `input` (raw runs split only at scan stops). A merged
+/// slice then equals `prev.content ++ next.content` verbatim; escaped or
+/// spaced-apart texts have a pointer gap and stay separate nodes.
+fn merge_text<'a>(input: &'a str, v: Vec<ICreole<'a>>) -> Vec<ICreole<'a>> {
+    let base = input.as_ptr() as usize;
+    let mut out: Vec<ICreole<'a>> = Vec::with_capacity(v.len());
+    for node in v {
+        match (&node, out.last_mut()) {
+            (ICreole::Text(t), Some(ICreole::Text(prev)))
+                if !t.is_empty()
+                    && !prev.is_empty()
+                    && t.as_ptr() as usize == prev.as_ptr() as usize + prev.len() =>
+            {
+                let end = t.as_ptr() as usize - base + t.len();
+                let start = end - prev.len() - t.len();
+                *prev = &input[start..end];
+            }
+            _ => out.push(node),
+        }
+    }
+    out
+}
+
 fn collect_opt_pair1<'a, E: ParseError<&'a str>>(
     mut parser: impl Parser<&'a str, Output = (Option<ICreole<'a>>, Option<ICreole<'a>>), Error = E>,
 ) -> impl Parser<&'a str, Output = Vec<ICreole<'a>>, Error = E> {
@@ -478,7 +502,7 @@ fn collect_opt_pair1<'a, E: ParseError<&'a str>>(
         if rst.is_empty() {
             Err(err_eof(input))
         } else {
-            Ok((i, rst))
+            Ok((i, merge_text(input, rst)))
         }
     }
 }
@@ -1296,32 +1320,21 @@ mod tests {
         use ICreole::*;
         assert_eq!(
             creoles("~**not bold**"),
-            vec![Paragraph(vec![Text("**"), Text("not bold**")])]
+            vec![Paragraph(vec![Text("**not bold**")])]
         );
         assert_eq!(
             creoles("~~esc ~~x"),
-            vec![Paragraph(vec![
-                Text("~"),
-                Text("esc "),
-                Text("~"),
-                Text("x")
-            ])]
+            vec![Paragraph(vec![Text("~esc "), Text("~x")])]
         );
-        assert_eq!(
-            creoles("~ bold?"),
-            vec![Paragraph(vec![Text(" "), Text("bold?")])]
-        );
+        assert_eq!(creoles("~ bold?"), vec![Paragraph(vec![Text(" bold?")])]);
         assert_eq!(
             creoles("~- item\nplain"),
-            vec![Paragraph(vec![Text("-"), Text(" item\nplain")])]
+            vec![Paragraph(vec![Text("- item\nplain")])]
         );
-        assert_eq!(
-            creoles("~= t"),
-            vec![Paragraph(vec![Text("="), Text(" t")])]
-        );
+        assert_eq!(creoles("~= t"), vec![Paragraph(vec![Text("= t")])]);
         assert_eq!(
             creoles("~~~|x"),
-            vec![Paragraph(vec![Text("~"), Text("|"), Text("x")])]
+            vec![Paragraph(vec![Text("~"), Text("|x")])]
         );
         assert_eq!(
             creoles("**a\\\\b**"),
@@ -1329,6 +1342,50 @@ mod tests {
                 Text("a"),
                 ForceLinebreak,
                 Text("b")
+            ])])]
+        );
+    }
+
+    #[test]
+    fn adversarial_tests() {
+        init();
+        use ICreole::*;
+        // deeper-than-two markers and unclosed runs degrade to text, not error
+        assert_eq!(
+            creoles("***c"),
+            // one nesting level per marker char, unbounded, no error
+            vec![BulletList(vec![BulletList(vec![BulletList(vec![
+                ListItem(vec![Text("c")])
+            ])])])]
+        );
+        assert_eq!(
+            creoles("**a*]]b{{c"),
+            vec![BulletList(vec![BulletList(vec![ListItem(vec![Text(
+                "a*]]b{{c"
+            )])])])]
+        );
+        for junk in ["[[[[[[[[[[", "]]]]]]]]]]", "{{{{{{{{{{", "}}}}}}}}}}"] {
+            assert_eq!(creoles(junk), vec![Paragraph(vec![Text(junk)])]);
+        }
+        assert_eq!(creoles("= = = = ="), vec![Heading(1, vec![Text("= = =")])]);
+        assert_eq!(
+            creoles("*a\n**b\n***c"),
+            vec![BulletList(vec![
+                ListItem(vec![Text("a")]),
+                BulletList(vec![
+                    ListItem(vec![Text("b")]),
+                    BulletList(vec![ListItem(vec![Text("c")])])
+                ])
+            ])]
+        );
+        assert_eq!(
+            creoles("|| || ||"),
+            vec![Table(vec![TableRow(vec![
+                TableCell(vec![]),
+                TableCell(vec![Text(" ")]),
+                TableCell(vec![]),
+                TableCell(vec![Text(" ")]),
+                TableCell(vec![])
             ])])]
         );
     }
@@ -1453,8 +1510,7 @@ mod tests {
                 "",
                 vec![Table(vec![TableRow(vec![TableCell(vec![
                     Text(" x"),
-                    Text("|"),
-                    Text("y ")
+                    Text("|y ")
                 ])])])]
             ))
         );
@@ -1464,8 +1520,7 @@ mod tests {
                 "",
                 vec![Table(vec![TableHeaderRow(vec![TableHeaderCell(vec![
                     Text(" h"),
-                    Text("|"),
-                    Text("=h2 ")
+                    Text("|=h2 ")
                 ])])])]
             ))
         );
@@ -1643,6 +1698,8 @@ mod tests {
             report("table_tests", table_tests);
             report("other_tests", other_tests);
             report("mixed_tests", mixed_tests);
+            report("escape_tests", escape_tests);
+            report("adversarial_tests", adversarial_tests);
             #[cfg(feature = "extend")]
             report("extend_tests", extend_tests);
         }

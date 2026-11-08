@@ -82,7 +82,7 @@ fn ast_summary(ast: &[ICreole]) -> String {
                             out.push_str(&format!("h[{}]", ast_summary(c)))
                         }
                         ICreole::TableRow(c) => out.push_str(&format!("r[{}]", ast_summary(c))),
-                        _ => out.push_str("?"),
+                        _ => out.push('?'),
                     }
                 }
                 out.push(')');
