@@ -1,3 +1,4 @@
+use crate::lexer;
 #[cfg(debug_assertions)]
 #[allow(unused_imports)]
 use log::{debug, error, info};
@@ -343,39 +344,26 @@ fn take_while_parser_fail<'a, E: ParseError<&'a str>>(
     mut fail_parser: impl Parser<&'a str, Output = ICreole<'a>, Error = E>,
 ) -> impl Parser<&'a str, Output = (Option<ICreole<'a>>, Option<ICreole<'a>>), Error = E> {
     move |input: &'a str| {
-        // debug!("take_while_parser_fail input : {}", input);
-        // let mut i = input;
-        let mut l = 0;
-        for (i, c) in input.char_indices().by_ref() {
-            // debug!("take_while_parser_fail i : {}", i);
-            if let Ok((r, v)) = parser.parse(&input[l..]) {
-                return Ok((
-                    r,
-                    (
-                        if l > 0 {
-                            if let Ok((_, v)) = fail_parser.parse(&input[..l]) {
-                                Some(v)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        },
-                        Some(v),
-                    ),
-                ));
-            } else {
-                l = i + c.len_utf8();
+        // lexer fast-forward: see take_while_parser_fail_or for the
+        // token-boundary argument (lexer::next_inline_stop).
+        let mut off = 0usize;
+        while let Some(t) = lexer::next_inline_stop(input, off) {
+            if let Ok((r, v)) = parser.parse(&input[t..]) {
+                let prefix = if t > 0 {
+                    fail_parser.parse(&input[..t]).ok().map(|(_, v)| v)
+                } else {
+                    None
+                };
+                return Ok((r, (prefix, Some(v))));
             }
+            off = t + 1;
         }
-        if l > 0 {
-            if let Ok((_, f)) = fail_parser.parse(&input[..l]) {
-                Ok((&input[input.len()..], (Some(f), None)))
-            } else {
-                Err(err_tag(input))
-            }
-        } else {
+        if let Ok((_, f)) = fail_parser.parse(input) {
+            Ok(("", (Some(f), None)))
+        } else if input.is_empty() {
             Err(err_eof(input))
+        } else {
+            Err(err_tag(input))
         }
     }
 }
@@ -427,30 +415,31 @@ fn take_while_parser_fail_or<'a, E: ParseError<&'a str>>(
     mut fail_parser: impl Parser<&'a str, Output = ICreole<'a>, Error = E>,
 ) -> impl Parser<&'a str, Output = (Option<ICreole<'a>>, Option<ICreole<'a>>), Error = E> {
     move |input: &'a str| {
-        let mut l = 0;
-        for (i, c) in input.char_indices().by_ref() {
-            if let Ok((i, true)) = term_parser.parse(&input[l..]) {
+        // lexer fast-forward: markup/terminators only ever start at token
+        // boundaries; failed candidates retry from candidate + 1 so nested
+        // openers (`{{{{y}}`) stay reachable (see lexer::next_inline_stop).
+        let mut off = 0usize;
+        while let Some(t) = lexer::next_inline_stop(input, off) {
+            if let Ok((i, true)) = term_parser.parse(&input[t..]) {
                 return Ok((
                     i,
-                    (fail_parser.parse(&input[..l]).ok().map(|(_, v)| v), None),
+                    (fail_parser.parse(&input[..t]).ok().map(|(_, v)| v), None),
                 ));
-            } else if let Ok((r, v)) = parser.parse(&input[l..]) {
+            } else if let Ok((r, v)) = parser.parse(&input[t..]) {
                 return Ok((
                     r,
-                    (fail_parser.parse(&input[..l]).ok().map(|(_, v)| v), Some(v)),
+                    (fail_parser.parse(&input[..t]).ok().map(|(_, v)| v), Some(v)),
                 ));
             } else {
-                l = i + c.len_utf8();
+                off = t + 1;
             }
         }
-        if l > 0 {
-            if let Ok((_, f)) = fail_parser.parse(&input[..l]) {
-                Ok(("", (Some(f), None)))
-            } else {
-                Err(err_tag(input))
-            }
-        } else {
+        if let Ok((_, f)) = fail_parser.parse(input) {
+            Ok(("", (Some(f), None)))
+        } else if input.is_empty() {
             Err(err_eof(input))
+        } else {
+            Err(err_tag(input))
         }
     }
 }

@@ -28,8 +28,10 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
 - `src/parser.rs` — all parsing + all inline tests: parsers :1-758 (public entry points at
   the end), `mod tests` from :760 (1516 lines total).
 - `src/main.rs` — scratch nom demo (`tag("hello")`); does not use the crate. Not a CLI.
-- `src/lexer.rs` — `logos` tokenizer experiment (`Tok`, `lex_vec`, `lex_count`) for the
-  lexer-vs-nom benchmark; zero-alloc token slices, not wired into `creoles`.
+- `src/lexer.rs` — `logos` tokenizer (`Tok`, `lex_vec`, `lex_count` from the lexer-vs-nom
+  bench) plus `next_inline_stop`/`is_scan_stop`, which now **drive** the inline text
+  collectors in `parser.rs` (DFA jump between markup candidates; `lit`/`dlit` semantics
+  unchanged). `Text` regex excludes `<`/`>` so `<<extend>>` opens become stop candidates.
 - Feature-gated AST variants + parsers: `extend` (`<<Icon(x)>>` → `Extend`), `font-color`
   (`Color`), `fold` (`Fold`), `link-button` (`[{…}]` → `LinkButton`); `extended` = all four.
   Caveat: `Color`'s parser is fully commented out — constructible but never produced;
@@ -128,7 +130,8 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
   `--features extend`/`extended`, 11 without — `extend_tests` is `#[cfg(feature = "extend")]`;
   list: `text_tests`, `text_style_tests`, `linebreak_tests`, `list_tests`, `parser_tests`,
   `heading_tests`, `link_tests`, `table_tests`, `image_tests`, `extend_tests`,
-  `other_tests`, `mixed_tests`; one commented-out) plus 1 sanity test in `src/lexer.rs:71`.
+  `other_tests`, `mixed_tests`; one commented-out) plus 2 tests in `src/lexer.rs`
+  (`lexer_smoke`, `inline_stops` — the latter pins jump-candidate semantics).
   Tests reach **private** combinators (`link`,
   `heading`, `lit`, `take_while_parser_fail`) via `use super::*;` — no `pub` needed to
   test a new parser fn.
