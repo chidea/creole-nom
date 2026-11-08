@@ -2,7 +2,8 @@
 name = "creole-nom"
 version = "1.0.9"
 authors = ["chidea"]
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 description = "WikiCreole markup language parser library by nom"
 repository = "https://github.com/chidea/creole-nom"

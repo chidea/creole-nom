@@ -37,7 +37,7 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
   Caveat: `Color`'s parser is fully commented out (`src/parser.rs:515-531`) — constructible
   but never produced; the `icon` feature has zero live consumers.
 - Targets are autodiscovered: lib `creole_nom` **and** bin `creole-nom` (`src/main.rs`);
-  Cargo.toml has no `[lib]`/`[[bin]]`/`[lints]`/`rust-version` sections.
+  Cargo.toml declares `rust-version = "1.85"`; no `[lib]`/`[[bin]]`/`[lints]` sections.
 
 ## Key Directories
 
@@ -105,11 +105,14 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
 - `src/lib.rs` — module wiring + `prelude`; add new public surface here.
 - `src/parser.rs` — every parser, entry points `try_creoles`/`creoles` (:762/:771), inline tests.
 - `src/creole.rs` — AST; a new markup node = variant here + parser fn + feature cfg if optional.
-- `.gitignore` ignores `Cargo.lock` (library convention); this working copy is not a git checkout.
+- `.gitignore` ignores `Cargo.lock` (library convention); tree is a git checkout since
+  2026-11-08 (`4dd0019` green baseline, `3c770f8` logos experiment).
 
 ## Runtime/Tooling Preferences
 
-- Rust **edition 2021**; plain stable `cargo`. No rustfmt.toml, no clippy config, no CI.
+- Rust **edition 2024** (migrated from 2021 on 2026-11-08; `cargo fix --edition` changed
+  no source — already 2024-clean; MSRV `rust-version = "1.85"`, verified on rustc 1.97.1);
+  plain stable `cargo`. No rustfmt.toml, no clippy config, no CI.
 - Tests assume `--features extended` (t.ps1), but **every feature set compiles and passes**
   (verified 2026-11-08) — keep all cfg combinations green when adding markup.
 - Crate publishes to the same name `creole-nom`; scripts are excluded from the package.
