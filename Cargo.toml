@@ -13,12 +13,13 @@ categories = ["parser-implementations"]
 exclude = [ "*.sh", "*.ps1", "*.log" ]
 
 [features]
-extended = ["link-button", "font-color", "fold", "extend"]
+extended = ["link-button", "font-color", "fold", "extend", "tex"]
 extend = []
 icon = []
 link-button = []
 font-color = []
 fold = []
+tex = []
 
 [dependencies]
 nom = "8"

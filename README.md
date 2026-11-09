@@ -30,6 +30,7 @@ WikiCreole markup language parser by nom
  - [ ] interwiki link
 
 ### Extended features over 1.0 (--feature=extended)
+ - [x] inline tex `$$E=mc^2$$` (`tex` feature; body may contain no `$`/newline)
  - [x] link/image/bold/italic in heading/list/table
  - [ ] link in image title
  - [ ] image in link title

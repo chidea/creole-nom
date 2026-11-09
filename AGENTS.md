@@ -2,15 +2,15 @@
 
 ## Project Overview
 
-`creole-nom` (v1.0.9, MIT, author `chidea`) is a Rust library that parses WikiCreole 1.0
+`creole-nom` (v1.1.0, MIT, author `chidea`) is a Rust library that parses WikiCreole 1.0
 wiki markup into a zero-copy AST using **nom 8**. Only three items form the public API:
 `creoles`, `try_creoles`, `ICreole` (re-exported via `creole_nom::prelude`).
 The README is a checkbox support matrix against the
 [WikiCreole 1.0 Test Cases](http://www.wikicreole.org/wiki/Creole1.0TestCases) — the README
 has no code blocks; usage is documented in the crate-level docs (`src/lib.rs`, 2 doctests,
-green under default and `extended`). Still unchecked: free link, interwiki link, link-in-image-
-title, image-in-link-title, text colors (tilde escape + across-line emphasis landed 2026-11-08).
-The "Extended" section is not mapped to Cargo features ("text colors" unchecked, yet
+green under default and `extended`). Still unchecked: interwiki link, link-in-image-
+title, image-in-link-title, text colors (inline tex `$$…$$` landed 2026-11-10, checked).
+The "Extended" section still has one unmapped Cargo feature ("text colors" unchecked,
 `font-color` exists);
 companion project `chidea/wasm-creole-live-editor` appears only in test fixtures
 (`src/parser/tests.rs:404`).
@@ -40,8 +40,9 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
   derives `Debug, Clone, Serialize, Deserialize, PartialEq`, manual `impl Eq`.
 - `src/parser/` — parsing split by concern (2026-11-08, was one `parser.rs`):
   `mod.rs` (submodule wiring + public entry points `try_creoles` :29, `creoles` :33),
-  `inline.rs` (`tilde_escape` :28, `bold` :55, `link` :109, `image` :136, `extend` :147,
-  `text` :171, `link_button` :178, `fold` :220), `block.rs` (`list_lines` :21, `list` :33,
+  `inline.rs` (`tilde_escape` :32, `bold` :62, `italic` :84, `text_style` :107, `link` :121,
+  `image` :150, `extend` :162, `text` :186, `link_button` :194, `inline_tex` :213,
+  `fold` :239), `block.rs` (`list_lines` :21, `list` :33,
   `heading` :114, `dont_format` :136, `table` :202, `parse_creole_inner` :241,
   `parse_paragraph`), `combinators.rs` (`err_tag` :23, `err_eof` :27, `para_break` :35,
   `starts_with_marker` :48, `lit`/`dlit` :70/:73, `take_dlit_text_until_peek_char0` :79,
@@ -50,9 +51,12 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
 - `src/lexer.rs` — `logos` tokenizer (`Tok`, `lex_vec`, `lex_count` from the lexer-vs-nom
   bench) plus `next_inline_stop`/`is_scan_stop`, which now **drive** the inline text
   collectors in `parser.rs` (DFA jump between markup candidates; `lit`/`dlit` semantics
-  unchanged). `Text` regex excludes `<`/`>`/`~` so `<<extend>>` opens and tilde escapes are stops.
+  unchanged). `Text` regex excludes `<`/`>`/`~`/`$` so `<<extend>>` and `$$tex$$` open and
+  tilde escapes are stops; `DollarRun` (`\$+`) lexes every TeX-delimiter candidate.
 - Feature-gated AST variants + parsers: `extend` (`<<Icon(x)>>` → `Extend`), `font-color`
-  (`Color`), `fold` (`Fold`), `link-button` (`[{…}]` → `LinkButton`); `extended` = all four.
+  (`Color`), `fold` (`Fold`), `link-button` (`[{…}]` → `LinkButton`), `tex` (`$$x$$` →
+  `InlineTex`); `extended` = all five. `InlineTex` is the one AST variant kept
+  unconditional — serde shape stays stable without `tex`; only its parser arm is gated.
   Caveat: `Color`'s parser is fully commented out — constructible but never produced;
   decided 2026-11-08: implement later as `[[color:red|text]]`, designed in one pass with
   free link so all `[[…]]` sub-syntaxes land together. The `icon` feature has zero live consumers.
@@ -74,7 +78,7 @@ creoles = infallible wrapper: Ok((_, v)) => v, Err => vec![]   (errors are swall
 
 ```bash
 cargo check                      # passes for every feature set, default included
-cargo test --features extended   # what the author runs: 13 passed + 2 ignored (profiles)
+cargo test --features extended   # what the author runs: 17 lib + 11 public_api + 2 doc
 cargo test --features extended -- --nocapture
 cargo test --features extended --test public_api   # public-surface suite only
 cargo test --doc                                   # crate-doc doctests (2; both feature sets)
@@ -96,8 +100,9 @@ cargo hack --feature-powerset --depth 2 check      # full feature matrix (needs 
   matches real behavior — `try_creoles("") == Ok(("", vec![Paragraph(vec![])]))`, the same
   empty-line convention `mixed_tests` asserts for blank lines.
 
-Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; each of
-`link-button`, `font-color`, `fold` 11; `cargo check` clean for all seven combinations.
+Green matrix (2026-11-10): `cargo test` 15 lib + 10 public_api + 2 doc; `--features tex`
+adds `tex_tests` + `inline_tex` (16 lib + 11 public_api); `--features extended` 17 + 11 + 2;
+`cargo check` clean for every combination (powerset via `cargo hack` runs in CI only).
 
 ## Code Conventions & Common Patterns
 
@@ -127,7 +132,7 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
 
 ## Important Files
 
-- `Cargo.toml` — features (`extended` = `link-button,font-color,fold,extend`), deps:
+- `Cargo.toml` — features (`extended` = `link-button,font-color,fold,extend,tex`), deps:
   `nom = "8"`, `log = "0"`, `serde = { version = "1", features = ["derive"] }`,
   `logos = "0.16.1"` (benchmark-only); dev-dep `env_logger = "0"`; `[lints]` sets
   `unsafe_code = "forbid"` + clippy `all = "warn"`. Resolved: nom 8.0.0, log 0.4.25,
@@ -153,10 +158,11 @@ Green matrix: `cargo test` 11 passed; `--features extend`/`extended` 12 passed; 
 ## Testing & QA
 
 - `#[cfg(test)] mod tests` in `src/parser/tests.rs` (module-level, no indent; 15 active
-  `#[test]`s, 16 under `--features extend`/`extended` — `extend_tests` (:711) is
-  `#[cfg(feature = "extend")]`; list: `text_tests`, `text_style_tests`, `linebreak_tests`,
-  `list_tests`, `parser_tests`, `heading_tests`, `link_tests`, `table_tests`, `image_tests`,
-  `extend_tests`, `escape_tests`, `other_tests`, `mixed_tests`; one commented-out) plus 2
+  `#[test]`s, 16 under `--features extend` or `tex`, 17 under `extended` — `extend_tests`
+  (:711) and `tex_tests` (:719) are feature-gated; list: `text_tests`, `text_style_tests`,
+  `linebreak_tests`, `list_tests`, `parser_tests`, `heading_tests`, `link_tests`,
+  `table_tests`, `image_tests`, `extend_tests`, `tex_tests`, `escape_tests`,
+  `other_tests`, `mixed_tests`; one commented-out) plus 2
   tests in `src/lexer.rs`
   (`lexer_smoke`, `inline_stops` — the latter pins jump-candidate semantics).
   Tests reach the `pub(crate)` parsers (`link`,

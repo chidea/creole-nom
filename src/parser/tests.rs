@@ -713,6 +713,37 @@ fn extend_tests() {
     use ICreole::*;
     assert_eq!(extend("<<Icon(home)>>"), Ok(("", Extend("Icon", "home"))))
 }
+
+#[cfg(feature = "tex")]
+#[test]
+fn tex_tests() {
+    init();
+    use ICreole::*;
+    assert_eq!(inline_tex("$$x^2$$"), Ok(("", InlineTex("x^2"))));
+    assert_eq!(
+        creoles("$$E=mc^2$$"),
+        vec![Paragraph(vec![InlineTex("E=mc^2")])]
+    );
+    // rides beside other inline markup
+    assert_eq!(
+        creoles("**b** $$y$$ t"),
+        vec![Paragraph(vec![
+            Bold(vec![Text("b")]),
+            Text(" "),
+            InlineTex("y"),
+            Text(" t")
+        ])]
+    );
+    // opens in a heading too
+    assert_eq!(creoles("= $$h$$ ="), vec![Heading(1, vec![InlineTex("h")])]);
+    // body may span neither a newline nor contain `$` -> verbatim text
+    assert_eq!(creoles("$$a\nb$$"), vec![Paragraph(vec![Text("$$a\nb$$")])]);
+    assert_eq!(creoles("$$a$b$$"), vec![Paragraph(vec![Text("$$a$b$$")])]);
+    // a lone `$` is ordinary text
+    assert_eq!(creoles("cost $5"), vec![Paragraph(vec![Text("cost $5")])]);
+    // `~$$` escapes the opener; the tilde is dropped, `$` runs merge
+    assert_eq!(creoles("~$$x$$"), vec![Paragraph(vec![Text("$$x$$")])]);
+}
 #[test]
 fn other_tests() {
     init();
@@ -856,6 +887,8 @@ mod time_profile {
         report("adversarial_tests", adversarial_tests);
         #[cfg(feature = "extend")]
         report("extend_tests", extend_tests);
+        #[cfg(feature = "tex")]
+        report("tex_tests", tex_tests);
     }
 
     /// Logos lexer vs nom pipeline on identical fixture strings:

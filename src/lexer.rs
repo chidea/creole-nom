@@ -5,9 +5,9 @@
 //!
 //! Marker runs (`=+`, `#+`, `\*+`, `/+`) are lexed without line context; a
 //! real pipeline would disambiguate heading/list markers by line position.
-//! Inline markup opens (`[[`, `{{`, `[{`, `<<`, `\\`, `**`, `//`, `~`) are token
-//! starts, which is what `next_inline_stop` uses to fast-forward inline text
-//! scans (wired into `parser`'s text collectors).
+//! Inline markup opens (`[[`, `{{`, `[{`, `<<`, `\\`, `**`, `//`, `~`) and the
+//! TeX delimiter `$$` are token starts, which is what `next_inline_stop` uses
+//! to fast-forward inline text scans (wired into `parser`'s text collectors).
 //! Characters the stream cannot match (stray `[`, single `\`, ...) surface as
 //! `Tok::Text` via the error slice.
 
@@ -46,9 +46,13 @@ pub enum Tok<'a> {
     /// italic delimiters or URL scheme colon-slashes
     #[regex(r"/+", |lex| lex.slice())]
     SlashRun(&'a str),
+    /// inline TeX delimiters `$$` (tex feature); a lone `$` is also a token,
+    /// keeping it a scan stop for the text collectors
+    #[regex(r"\$+", |lex| lex.slice())]
+    DollarRun(&'a str),
     #[token("\n")]
     Newline,
-    #[regex(r"[^\[\]\{\}\|\*\\\/\=#<>\n~]+", |lex| lex.slice())]
+    #[regex(r"[^\[\]\{\}\|\*\\\/\=#<>$\n~]+", |lex| lex.slice())]
     Text(&'a str),
 }
 
@@ -133,6 +137,17 @@ mod tests {
                 Text("x")
             ]
         );
+        assert_eq!(
+            lex_vec("$$x$$ $y"),
+            vec![
+                DollarRun("$$"),
+                Text("x"),
+                DollarRun("$$"),
+                Text(" "),
+                DollarRun("$"),
+                Text("y")
+            ]
+        );
         // stray single marker chars survive as Text, scan never fails
         assert_eq!(lex_count(r"[a{b}c\d"), 8);
     }
@@ -158,5 +173,7 @@ mod tests {
         assert_eq!(next_inline_stop("a<<x>>b", 0), Some(1));
         assert_eq!(next_inline_stop("a\\\\b", 0), Some(1));
         assert_eq!(next_inline_stop("a~**b", 0), Some(1));
+        assert_eq!(next_inline_stop("a$$x$$b", 0), Some(1));
+        assert_eq!(next_inline_stop("a$b", 0), Some(1));
     }
 }

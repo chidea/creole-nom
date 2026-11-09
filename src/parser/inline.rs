@@ -25,8 +25,8 @@ use {
 /// Tilde escape, WikiCreole escape-character proposal
 /// (http://www.wikicreole.org/wiki/EscapeCharacterProposal, spec §2.20):
 /// `~` before markup yields that markup verbatim as text - `~**` -> `**`,
-/// `~//` -> `//`, `~[[` `~]]` `~{{` `~}}` `~\\` `~----`, and for line-head
-/// markup `~-` `~#` `~=` `~|` (escaping mid-line is harmless). `~~` and
+/// `~//` -> `//`, `~[[` `~]]` `~{{` `~}}` `~\\` `~----` — plus `~$$` under the
+/// `tex` feature — and for line-head
 /// `~<space>` escape the escape character itself -> a literal `~`. The
 /// result borrows the escaped characters; no allocation.
 pub(crate) fn tilde_escape(input: &str) -> IResult<&str, ICreole<'_>> {
@@ -48,6 +48,8 @@ pub(crate) fn tilde_escape(input: &str) -> IResult<&str, ICreole<'_>> {
                     tag("#"),
                     tag("="),
                     tag("|"),
+                    #[cfg(feature = "tex")]
+                    tag("$$"),
                 ))),
             )),
         ),
@@ -205,16 +207,13 @@ pub(crate) fn link_button(input: &str) -> IResult<&str, ICreole<'_>> {
     let v = vec![ICreole::Text(name)];
     Ok((left, ICreole::LinkButton(href, v)))
 }
+/// `$$body$$` inline TeX → `InlineTex(body)`; the body may contain neither `$`
+/// nor newlines. `tex`.
 #[cfg(feature = "tex")]
-pub(crate) fn inline_tex(input:&str) -> IResult<&str, ICreole<'_>> {
-    map(
-        delimited(
-            tag("$$"),
-            is_not("$\n"),
-            tag("$$"),
-        ),
-        |body| ICreole::InlineTex(body),
-    )
+pub(crate) fn inline_tex(input: &str) -> IResult<&str, ICreole<'_>> {
+    map(delimited(tag("$$"), is_not("$\n"), tag("$$")), |body| {
+        ICreole::InlineTex(body)
+    })
     .parse(input)
 }
 // #[cfg(feature = "font-color")]

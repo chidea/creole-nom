@@ -194,3 +194,22 @@ fn nowiki() {
         ]
     );
 }
+
+#[cfg(feature = "tex")]
+#[test]
+fn inline_tex() {
+    use ICreole::*;
+    assert_eq!(
+        creoles("mass $$E=mc^2$$ now"),
+        vec![Paragraph(vec![
+            Text("mass "),
+            InlineTex("E=mc^2"),
+            Text(" now"),
+        ])]
+    );
+    // without a closing `$$` the run stays text
+    assert_eq!(
+        creoles("$$unclosed"),
+        vec![Paragraph(vec![Text("$$unclosed")])]
+    );
+}
