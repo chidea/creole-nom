@@ -1,6 +1,6 @@
 [package]
 name = "creole-nom"
-version = "1.0.9"
+version = "1.1.0"
 authors = ["chidea"]
 edition = "2024"
 rust-version = "1.85"

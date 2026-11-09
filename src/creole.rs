@@ -73,6 +73,8 @@ pub enum ICreole<'a> {
     // BoldItalic(Vec<ICreole<'a>>),
     // Unterline(Vec<ICreole<'a>>),
     // Monospace(Vec<ICreole<'a>>),
+    /// `$$body$$` inline tex
+    InlineTex(&'a str),
 }
 
 /// Total equality; safe because the tree only ever holds `str` slices, integers

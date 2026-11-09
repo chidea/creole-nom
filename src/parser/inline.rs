@@ -107,6 +107,8 @@ pub(crate) fn text_style(input: &str) -> IResult<&str, ICreole<'_>> {
         value(ICreole::ForceLinebreak, tag("\\\\")),
         bold,
         italic,
+        #[cfg(feature = "tex")]
+        inline_tex,
         // #[cfg(feature = "font-color")]
         // font_color,
     ))
@@ -203,18 +205,23 @@ pub(crate) fn link_button(input: &str) -> IResult<&str, ICreole<'_>> {
     let v = vec![ICreole::Text(name)];
     Ok((left, ICreole::LinkButton(href, v)))
 }
-// #[cfg(feature="link-button")]
-// fn link_button(input: &str) -> IResult<&str, ICreole> {
-//   map(delimited(tag("[{"), alt((
-//     separated_pair(is_not("|]}\n"), tag("|"), is_not("|]}\n")),
-//     map(is_not("]}\n"), |label: &str| -> (&str, &str) { (label, label) }),
-//   )), tag("]}")), |(link, label)| ICreole::LinkButton(label, link, ""))(input)
-// }
+#[cfg(feature = "tex")]
+pub(crate) fn inline_tex(input:&str) -> IResult<&str, ICreole<'_>> {
+    map(
+        delimited(
+            tag("$$"),
+            is_not("$\n"),
+            tag("$$"),
+        ),
+        |body| ICreole::InlineTex(body),
+    )
+    .parse(input)
+}
 // #[cfg(feature = "font-color")]
 // fn font_color(input: &str) -> IResult<&str, ICreole> {
 //     map(
 //         delimited(
-//             tag("[{"),
+//             tag("{["),
 //             alt((
 //                 separated_pair(is_not("|]}\n"), tag("|"), is_not("|]}\n")),
 //                 map(is_not("]}\n"), |label: &str| -> (&str, &str) {

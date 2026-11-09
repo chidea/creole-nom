@@ -29,8 +29,8 @@ WikiCreole markup language parser by nom
  - [x] italic/bold extend across line
  - [ ] interwiki link
 
-### Extended features over 1.0
+### Extended features over 1.0 (--feature=extended)
  - [x] link/image/bold/italic in heading/list/table
  - [ ] link in image title
  - [ ] image in link title
- - [ ] text colors
+ - [ ] text colors by inline tex
